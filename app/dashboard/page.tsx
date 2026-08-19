@@ -15,7 +15,7 @@ import {
 } from "firebase/firestore";
 import { auth, db } from "@/lib/firebase";
 import { useRouter } from "next/navigation";
-import { Book, Film, LogOut, Plus, Star, Loader2, Pencil, Trash2, X, Settings2, Image as ImageIcon } from "lucide-react";
+import { Book, Film, LogOut, Plus, Star, Loader2, Pencil, Trash2, X, Settings2, Image as ImageIcon, User as UserIcon } from "lucide-react";
 
 interface MediaItem {
   id: string;
@@ -55,6 +55,9 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<"book" | "movie">("book");
   const [items, setItems] = useState<MediaItem[]>([]);
+
+  // State Dropdown Profile
+  const [showProfileMenu, setShowProfileMenu] = useState(false);
 
   // State Modal Utama
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -154,13 +157,41 @@ export default function Dashboard() {
     setEditingItem(null);
   };
 
+  // Helper jika status diubah ke Selesai -> Otomatis set 100% full
+  const handleStatusChange = (newStatus: "Wishlist" | "On Going" | "Selesai") => {
+    if (newStatus === "Selesai") {
+      setFormData((prev) => ({
+        ...prev,
+        status: newStatus,
+        currentPage: prev.totalPages || prev.currentPage,
+        movieProgressMinutes: prev.movieDurationMinutes || prev.movieProgressMinutes,
+        seriesProgressEps: prev.seriesEpisodes || prev.seriesProgressEps,
+      }));
+    } else {
+      setFormData((prev) => ({ ...prev, status: newStatus }));
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user) return;
 
     try {
+      let finalData = { ...formData };
+
+      // Pastikan jika status Selesai, nilainya pasti dikunci ke nilai maksimum
+      if (finalData.status === "Selesai") {
+        if (activeTab === "book") {
+          finalData.currentPage = finalData.totalPages || finalData.currentPage;
+        } else if (finalData.mediaCategory === "film") {
+          finalData.movieProgressMinutes = finalData.movieDurationMinutes || finalData.movieProgressMinutes;
+        } else {
+          finalData.seriesProgressEps = finalData.seriesEpisodes || finalData.seriesProgressEps;
+        }
+      }
+
       const payload = {
-        ...formData,
+        ...finalData,
         type: activeTab,
         userId: user.uid,
         updatedAt: serverTimestamp(),
@@ -197,6 +228,8 @@ export default function Dashboard() {
   };
 
   const calculateProgress = (item: MediaItem) => {
+    if (item.status === "Selesai") return 100;
+
     if (item.type === "book") {
       if (!item.totalPages || item.totalPages === 0) return 0;
       return Math.min(100, Math.round(((item.currentPage || 0) / item.totalPages) * 100));
@@ -227,28 +260,56 @@ export default function Dashboard() {
   return (
     <div className="bg-slate-900 text-slate-100 min-h-screen font-sans pb-24 md:pb-8 p-4 md:p-8 select-none">
       <div className="max-w-6xl mx-auto">
-        {/* Header Profile */}
-        <div className="flex justify-between items-center bg-slate-800/60 border border-slate-700/50 p-4 md:p-6 rounded-2xl mb-6 shadow-lg">
-          <div className="flex items-center space-x-3 md:space-x-4">
-            {user?.photoURL ? (
-              <img src={user.photoURL} alt="Avatar" className="w-10 h-10 md:w-12 md:h-12 rounded-full border border-indigo-500" />
-            ) : (
-              <div className="w-10 h-10 md:w-12 md:h-12 rounded-full bg-indigo-600 flex items-center justify-center text-white font-bold text-sm md:text-base">
-                {user?.displayName?.charAt(0) || "U"}
+        
+        {/* Header Bar dengan Profil Ringkas di Pojok Kanan Atas */}
+        <div className="flex justify-between items-center mb-6 relative">
+          <div>
+            <h2 className="text-xl md:text-2xl font-extrabold text-white tracking-tight">
+              Mark Your Progress! 🚀
+            </h2>
+            <p className="text-xs md:text-sm text-slate-400">Kelola wishlist & progress harian kamu.</p>
+          </div>
+
+          {/* Icon Profil Ringkas */}
+          <div className="relative">
+            <button
+              onClick={() => setShowProfileMenu(!showProfileMenu)}
+              className="w-10 h-10 md:w-11 md:h-11 rounded-full border border-indigo-500/50 p-0.5 bg-slate-800 flex items-center justify-center hover:scale-105 active:scale-95 transition shadow-lg"
+            >
+              {user?.photoURL ? (
+                <img src={user.photoURL} alt="User Profile" className="w-full h-full rounded-full object-cover" />
+              ) : (
+                <UserIcon className="w-5 h-5 text-indigo-400" />
+              )}
+            </button>
+
+            {/* Dropdown Data Akun */}
+            {showProfileMenu && (
+              <div className="absolute right-0 mt-2 w-64 bg-slate-800 border border-slate-700 rounded-2xl shadow-2xl p-4 z-50">
+                <div className="flex items-center space-x-3 pb-3 border-b border-slate-700/60 mb-3">
+                  {user?.photoURL ? (
+                    <img src={user.photoURL} alt="Avatar" className="w-10 h-10 rounded-full border border-indigo-500" />
+                  ) : (
+                    <div className="w-10 h-10 rounded-full bg-indigo-600 flex items-center justify-center text-white font-bold">
+                      {user?.displayName?.charAt(0) || "U"}
+                    </div>
+                  )}
+                  <div className="overflow-hidden">
+                    <p className="text-sm font-bold text-white truncate">{user?.displayName || "User"}</p>
+                    <p className="text-xs text-slate-400 truncate">{user?.email}</p>
+                  </div>
+                </div>
+
+                <button
+                  onClick={handleLogout}
+                  className="w-full py-2 px-3 bg-red-500/10 hover:bg-red-500/20 text-red-400 rounded-xl text-xs font-semibold transition flex items-center justify-center space-x-2"
+                >
+                  <LogOut className="w-4 h-4" />
+                  <span>Keluar Akun</span>
+                </button>
               </div>
             )}
-            <div>
-              <h2 className="text-base md:text-xl font-bold text-white line-clamp-1">Halo, {user?.displayName || "User"}! 👋</h2>
-              <p className="text-slate-400 text-xs md:text-sm line-clamp-1">{user?.email}</p>
-            </div>
           </div>
-          <button
-            onClick={handleLogout}
-            className="text-slate-400 hover:text-red-400 p-2 md:p-0 text-xs md:text-sm font-medium transition flex items-center space-x-1"
-          >
-            <LogOut className="w-4 h-4" />
-            <span className="hidden md:inline">Keluar</span>
-          </button>
         </div>
 
         {/* Tab Switcher - Desktop View */}
@@ -349,11 +410,11 @@ export default function Dashboard() {
 
                         <p className="text-[10px] md:text-[11px] text-slate-400 mt-1">
                           {item.type === "book" ? (
-                            `${item.currentPage || 0} / ${item.totalPages || 0} hal`
+                            `${item.status === "Selesai" ? item.totalPages : item.currentPage || 0} / ${item.totalPages || 0} hal`
                           ) : item.mediaCategory === "film" ? (
-                            `${formatTime(item.movieProgressMinutes)} / ${formatTime(item.movieDurationMinutes)}`
+                            `${formatTime(item.status === "Selesai" ? item.movieDurationMinutes : item.movieProgressMinutes)} / ${formatTime(item.movieDurationMinutes)}`
                           ) : (
-                            `${item.seriesProgressEps || 0} / ${item.seriesEpisodes || 0} eps (${item.seriesSeasons || 1} Season)`
+                            `${item.status === "Selesai" ? item.seriesEpisodes : item.seriesProgressEps || 0} / ${item.seriesEpisodes || 0} eps (${item.seriesSeasons || 1} Season)`
                           )}
                         </p>
                       </div>
@@ -410,7 +471,7 @@ export default function Dashboard() {
         )}
       </div>
 
-      {/* FLOATING ACTION BUTTON (FAB) - KHUSUS MOBILE */}
+      {/* FLOATING ACTION BUTTON (FAB) - MOBILE */}
       <button
         onClick={() => openModal()}
         className={`md:hidden fixed bottom-20 right-5 z-40 p-4 rounded-full text-white shadow-2xl transition active:scale-95 ${
@@ -420,7 +481,7 @@ export default function Dashboard() {
         <Plus className="w-6 h-6" />
       </button>
 
-      {/* BOTTOM NAVBAR - KHUSUS MOBILE (STYLE APP MOBILE) */}
+      {/* BOTTOM NAVBAR - MOBILE */}
       <div className="md:hidden fixed bottom-0 left-0 right-0 bg-slate-900/90 backdrop-blur-md border-t border-slate-800 z-40 px-6 py-2 flex justify-around items-center">
         <button
           onClick={() => setActiveTab("book")}
@@ -510,7 +571,7 @@ export default function Dashboard() {
                 <label className="block text-xs text-slate-400 mb-1">Status</label>
                 <select
                   value={formData.status || "Wishlist"}
-                  onChange={(e) => setFormData({ ...formData, status: e.target.value as any })}
+                  onChange={(e) => handleStatusChange(e.target.value as any)}
                   className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white text-sm focus:outline-none focus:border-indigo-500"
                 >
                   <option value="Wishlist">✨ Wishlist</option>
@@ -521,16 +582,18 @@ export default function Dashboard() {
 
               {activeTab === "book" && (
                 <>
-                  <div>
-                    <label className="block text-xs text-slate-400 mb-1">Halaman Sekarang</label>
-                    <input
-                      type="number"
-                      min="0"
-                      value={formData.currentPage || 0}
-                      onChange={(e) => setFormData({ ...formData, currentPage: Number(e.target.value) })}
-                      className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white text-sm focus:outline-none focus:border-indigo-500"
-                    />
-                  </div>
+                  {formData.status !== "Selesai" && (
+                    <div>
+                      <label className="block text-xs text-slate-400 mb-1">Halaman Sekarang</label>
+                      <input
+                        type="number"
+                        min="0"
+                        value={formData.currentPage || 0}
+                        onChange={(e) => setFormData({ ...formData, currentPage: Number(e.target.value) })}
+                        className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white text-sm focus:outline-none focus:border-indigo-500"
+                      />
+                    </div>
+                  )}
 
                   {!editingItem && (
                     <div>
@@ -574,28 +637,30 @@ export default function Dashboard() {
                     </div>
                   )}
 
-                  {formData.mediaCategory === "film" ? (
-                    <div>
-                      <label className="block text-xs text-slate-400 mb-1">Progress Nonton (Menit)</label>
-                      <input
-                        type="number"
-                        min="0"
-                        value={formData.movieProgressMinutes || 0}
-                        onChange={(e) => setFormData({ ...formData, movieProgressMinutes: Number(e.target.value) })}
-                        className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white text-sm focus:outline-none focus:border-indigo-500"
-                      />
-                    </div>
-                  ) : (
-                    <div>
-                      <label className="block text-xs text-slate-400 mb-1">Episode yang Ditonton</label>
-                      <input
-                        type="number"
-                        min="0"
-                        value={formData.seriesProgressEps || 0}
-                        onChange={(e) => setFormData({ ...formData, seriesProgressEps: Number(e.target.value) })}
-                        className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white text-sm focus:outline-none focus:border-indigo-500"
-                      />
-                    </div>
+                  {formData.status !== "Selesai" && (
+                    formData.mediaCategory === "film" ? (
+                      <div>
+                        <label className="block text-xs text-slate-400 mb-1">Progress Nonton (Menit)</label>
+                        <input
+                          type="number"
+                          min="0"
+                          value={formData.movieProgressMinutes || 0}
+                          onChange={(e) => setFormData({ ...formData, movieProgressMinutes: Number(e.target.value) })}
+                          className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white text-sm focus:outline-none focus:border-indigo-500"
+                        />
+                      </div>
+                    ) : (
+                      <div>
+                        <label className="block text-xs text-slate-400 mb-1">Episode yang Ditonton</label>
+                        <input
+                          type="number"
+                          min="0"
+                          value={formData.seriesProgressEps || 0}
+                          onChange={(e) => setFormData({ ...formData, seriesProgressEps: Number(e.target.value) })}
+                          className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white text-sm focus:outline-none focus:border-indigo-500"
+                        />
+                      </div>
+                    )
                   )}
 
                   {!editingItem && (
@@ -636,19 +701,20 @@ export default function Dashboard() {
                     )
                   )}
 
+                  {/* Rating Bintang tanpa kata "Bintang" */}
                   {formData.status === "Selesai" && (
                     <div>
-                      <label className="block text-xs text-slate-400 mb-1">Rating Bintang</label>
+                      <label className="block text-xs text-slate-400 mb-1">Rating</label>
                       <select
                         value={formData.rating || 5}
                         onChange={(e) => setFormData({ ...formData, rating: Number(e.target.value) })}
                         className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white text-sm focus:outline-none focus:border-indigo-500"
                       >
-                        <option value="5">⭐⭐⭐⭐⭐ (5 Bintang)</option>
-                        <option value="4">⭐⭐⭐⭐ (4 Bintang)</option>
-                        <option value="3">⭐⭐⭐ (3 Bintang)</option>
-                        <option value="2">⭐⭐ (2 Bintang)</option>
-                        <option value="1">⭐ (1 Bintang)</option>
+                        <option value="5">⭐⭐⭐⭐⭐ </option>
+                        <option value="4">⭐⭐⭐⭐ </option>
+                        <option value="3">⭐⭐⭐ </option>
+                        <option value="2">⭐⭐ </option>
+                        <option value="1">⭐ </option>
                       </select>
                     </div>
                   )}
