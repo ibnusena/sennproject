@@ -24,7 +24,7 @@ interface MediaItem {
   subTitle: string; // Publisher atau Penulis
   status: "Wishlist" | "On Going" | "Selesai";
   userId: string;
-  coverUrl?: string; // Cover Portrait
+  coverUrl?: string;
 
   // Custom Fields Buku
   currentPage?: number;
@@ -33,12 +33,12 @@ interface MediaItem {
 
   // Custom Fields Tontonan
   mediaCategory?: "film" | "series";
-  movieDurationMinutes?: number; // Total durasi dalam menit
-  movieProgressMinutes?: number; // Progress dalam menit
+  movieDurationMinutes?: number;
+  movieProgressMinutes?: number;
   seriesSeasons?: number;
   seriesEpisodes?: number;
   seriesProgressEps?: number;
-  rating?: number; // 1-5 bintang
+  rating?: number;
 }
 
 const PUBLISHERS = [
@@ -47,7 +47,6 @@ const PUBLISHERS = [
   { name: "HBO", color: "bg-purple-600/20 text-purple-400 border-purple-500/30", icon: "🟣" },
   { name: "VIU", color: "bg-amber-500/20 text-amber-400 border-amber-500/30", icon: "🟡" },
   { name: "Vidio", color: "bg-rose-600/20 text-rose-400 border-rose-500/30", icon: "🔴" },
-  { name: "Lainnya", color: "bg-gray-600/20 text-gray-400 border-gray-500/30", icon: "⚪" }
 ];
 
 export default function Dashboard() {
@@ -57,11 +56,11 @@ export default function Dashboard() {
   const [activeTab, setActiveTab] = useState<"book" | "movie">("book");
   const [items, setItems] = useState<MediaItem[]>([]);
 
-  // State Modal Utama (Tambah/Edit Progress Biasa)
+  // State Modal Utama
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<MediaItem | null>(null);
 
-  // State Modal Khusus Edit Meta (Halaman/Durasi/Season/Eps)
+  // State Modal Khusus Edit Meta
   const [isMetaModalOpen, setIsMetaModalOpen] = useState(false);
 
   // Form State
@@ -110,7 +109,6 @@ export default function Dashboard() {
     return () => unsubscribeAuth();
   }, [router]);
 
-  // Helper Format Waktu Menit ke "X j Y m"
   const formatTime = (totalMinutes: number = 0) => {
     const hours = Math.floor(totalMinutes / 60);
     const minutes = totalMinutes % 60;
@@ -221,47 +219,44 @@ export default function Dashboard() {
     );
   }
 
-  // Sorting: Wishlist (1) -> On Going (2) -> Selesai (3)
   const statusOrder = { Wishlist: 1, "On Going": 2, Selesai: 3 };
   const filteredItems = items
     .filter((item) => item.type === activeTab)
     .sort((a, b) => (statusOrder[a.status] || 99) - (statusOrder[b.status] || 99));
 
   return (
-    <div className="bg-slate-900 text-slate-100 min-h-screen font-sans p-4 md:p-8">
+    <div className="bg-slate-900 text-slate-100 min-h-screen font-sans pb-24 md:pb-8 p-4 md:p-8 select-none">
       <div className="max-w-6xl mx-auto">
         {/* Header Profile */}
-        <div className="flex flex-col md:flex-row justify-between items-start md:items-center bg-slate-800/40 border border-slate-800 p-6 rounded-2xl mb-8 gap-4">
-          <div className="flex items-center space-x-4">
+        <div className="flex justify-between items-center bg-slate-800/60 border border-slate-700/50 p-4 md:p-6 rounded-2xl mb-6 shadow-lg">
+          <div className="flex items-center space-x-3 md:space-x-4">
             {user?.photoURL ? (
-              <img src={user.photoURL} alt="Avatar" className="w-12 h-12 rounded-full border border-indigo-500" />
+              <img src={user.photoURL} alt="Avatar" className="w-10 h-10 md:w-12 md:h-12 rounded-full border border-indigo-500" />
             ) : (
-              <div className="w-12 h-12 rounded-full bg-indigo-600 flex items-center justify-center text-white font-bold">
+              <div className="w-10 h-10 md:w-12 md:h-12 rounded-full bg-indigo-600 flex items-center justify-center text-white font-bold text-sm md:text-base">
                 {user?.displayName?.charAt(0) || "U"}
               </div>
             )}
             <div>
-              <h2 className="text-xl font-bold text-white">Halo, {user?.displayName || "User"}! 👋</h2>
-              <p className="text-slate-400 text-sm">{user?.email}</p>
+              <h2 className="text-base md:text-xl font-bold text-white line-clamp-1">Halo, {user?.displayName || "User"}! 👋</h2>
+              <p className="text-slate-400 text-xs md:text-sm line-clamp-1">{user?.email}</p>
             </div>
           </div>
           <button
             onClick={handleLogout}
-            className="text-slate-400 hover:text-red-400 text-sm font-medium transition flex items-center space-x-1"
+            className="text-slate-400 hover:text-red-400 p-2 md:p-0 text-xs md:text-sm font-medium transition flex items-center space-x-1"
           >
             <LogOut className="w-4 h-4" />
-            <span>Keluar</span>
+            <span className="hidden md:inline">Keluar</span>
           </button>
         </div>
 
-        {/* Tab Switcher */}
-        <div className="flex border-b border-slate-800 mb-8 space-x-8">
+        {/* Tab Switcher - Desktop View */}
+        <div className="hidden md:flex border-b border-slate-800 mb-8 space-x-8">
           <button
             onClick={() => setActiveTab("book")}
             className={`pb-3 font-semibold flex items-center space-x-2 border-b-2 transition ${
-              activeTab === "book"
-                ? "text-indigo-400 border-indigo-500"
-                : "text-slate-400 hover:text-white border-transparent"
+              activeTab === "book" ? "text-indigo-400 border-indigo-500" : "text-slate-400 hover:text-white border-transparent"
             }`}
           >
             <Book className="w-4 h-4" />
@@ -270,9 +265,7 @@ export default function Dashboard() {
           <button
             onClick={() => setActiveTab("movie")}
             className={`pb-3 font-semibold flex items-center space-x-2 border-b-2 transition ${
-              activeTab === "movie"
-                ? "text-pink-400 border-pink-500"
-                : "text-slate-400 hover:text-white border-transparent"
+              activeTab === "movie" ? "text-pink-400 border-pink-500" : "text-slate-400 hover:text-white border-transparent"
             }`}
           >
             <Film className="w-4 h-4" />
@@ -280,14 +273,14 @@ export default function Dashboard() {
           </button>
         </div>
 
-        {/* Header Section */}
-        <div className="flex justify-between items-center mb-6">
-          <h3 className="text-xl font-bold text-white">
+        {/* Header Section Desktop */}
+        <div className="flex justify-between items-center mb-4 md:mb-6">
+          <h3 className="text-lg md:text-xl font-bold text-white">
             {activeTab === "book" ? "Daftar Buku Saya" : "Daftar Tontonan Saya"}
           </h3>
           <button
             onClick={() => openModal()}
-            className={`px-4 py-2 rounded-lg text-sm font-medium flex items-center space-x-2 transition text-white ${
+            className={`hidden md:flex px-4 py-2 rounded-lg text-sm font-medium items-center space-x-2 transition text-white ${
               activeTab === "book" ? "bg-indigo-600 hover:bg-indigo-500" : "bg-pink-600 hover:bg-pink-500"
             }`}
           >
@@ -299,28 +292,28 @@ export default function Dashboard() {
         {/* Grid List Data */}
         {filteredItems.length === 0 ? (
           <div className="text-center py-12 bg-slate-800/20 border border-dashed border-slate-800 rounded-2xl">
-            <p className="text-slate-500">Belum ada data. Klik tombol di atas untuk menambahkan!</p>
+            <p className="text-slate-500 text-sm">Belum ada data. Klik tombol `+` untuk menambahkan!</p>
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6">
             {filteredItems.map((item) => {
               const progress = calculateProgress(item);
               const pubInfo = PUBLISHERS.find((p) => p.name === item.subTitle);
 
               return (
-                <div key={item.id} className="bg-slate-800 border border-slate-700/60 p-5 rounded-xl flex gap-4 group relative overflow-hidden">
-                  {/* Cover Portrait (Opsional) */}
+                <div key={item.id} className="bg-slate-800/90 border border-slate-700/60 p-4 md:p-5 rounded-2xl flex gap-3 md:gap-4 group relative overflow-hidden shadow-md">
+                  {/* Cover Portrait */}
                   {item.coverUrl && (
-                    <div className="w-24 h-36 flex-shrink-0 rounded-lg overflow-hidden bg-slate-900 border border-slate-700">
+                    <div className="w-20 md:w-24 h-28 md:h-36 flex-shrink-0 rounded-xl overflow-hidden bg-slate-900 border border-slate-700">
                       <img src={item.coverUrl} alt={item.title} className="w-full h-full object-cover" />
                     </div>
                   )}
 
                   <div className="flex-1 flex flex-col justify-between">
                     <div>
-                      {/* Badge Status */}
-                      <div className="flex justify-between items-center mb-2 gap-1 flex-wrap">
-                        <span className={`text-[11px] px-2 py-0.5 rounded-full font-medium border ${
+                      {/* Badge Status & Publisher */}
+                      <div className="flex justify-between items-center mb-1.5 gap-1 flex-wrap">
+                        <span className={`text-[10px] md:text-[11px] px-2 py-0.5 rounded-full font-medium border ${
                           item.status === "Selesai" 
                             ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20" 
                             : item.status === "On Going" 
@@ -330,21 +323,20 @@ export default function Dashboard() {
                           {item.status === "Wishlist" ? "✨ Wishlist" : item.status === "On Going" ? "📖 On Going" : "🏆 Tamat"}
                         </span>
 
-                        {/* Badge Publisher dengan Warna */}
                         {item.type === "movie" && (
-                          <span className={`text-[11px] px-2 py-0.5 rounded border font-semibold flex items-center gap-1 ${pubInfo?.color || "bg-slate-700 text-slate-300 border-slate-600"}`}>
+                          <span className={`text-[10px] md:text-[11px] px-1.5 py-0.5 rounded border font-semibold flex items-center gap-1 ${pubInfo?.color || "bg-slate-700 text-slate-300 border-slate-600"}`}>
                             <span>{pubInfo?.icon || "🎬"}</span>
                             <span>{item.subTitle}</span>
                           </span>
                         )}
                       </div>
 
-                      <h4 className="font-bold text-white text-base leading-snug line-clamp-1">{item.title}</h4>
-                      {item.type === "book" && <p className="text-slate-400 text-xs mb-3">{item.subTitle}</p>}
+                      <h4 className="font-bold text-white text-sm md:text-base leading-snug line-clamp-1">{item.title}</h4>
+                      {item.type === "book" && <p className="text-slate-400 text-xs mb-2 line-clamp-1">{item.subTitle}</p>}
 
                       {/* Progress Bar */}
-                      <div className="mt-2 mb-3">
-                        <div className="flex justify-between text-xs text-slate-400 mb-1">
+                      <div className="mt-2 mb-2">
+                        <div className="flex justify-between text-[11px] text-slate-400 mb-1">
                           <span>Progress</span>
                           <span className="font-semibold text-indigo-400">{progress}%</span>
                         </div>
@@ -355,7 +347,7 @@ export default function Dashboard() {
                           ></div>
                         </div>
 
-                        <p className="text-[11px] text-slate-400 mt-1">
+                        <p className="text-[10px] md:text-[11px] text-slate-400 mt-1">
                           {item.type === "book" ? (
                             `${item.currentPage || 0} / ${item.totalPages || 0} hal`
                           ) : item.mediaCategory === "film" ? (
@@ -366,45 +358,45 @@ export default function Dashboard() {
                         </p>
                       </div>
 
-                      {/* Rating (Hanya Muncul Jika Selesai) */}
+                      {/* Rating (Selesai Only) */}
                       {item.type === "movie" && item.status === "Selesai" && item.rating && (
-                        <div className="flex items-center space-x-1 mb-2">
+                        <div className="flex items-center space-x-0.5 mb-1">
                           {Array.from({ length: 5 }).map((_, i) => (
                             <Star 
                               key={i} 
-                              className={`w-3.5 h-3.5 ${i < (item.rating || 0) ? "text-amber-400 fill-amber-400" : "text-slate-600"}`} 
+                              className={`w-3 h-3 ${i < (item.rating || 0) ? "text-amber-400 fill-amber-400" : "text-slate-600"}`} 
                             />
                           ))}
                         </div>
                       )}
 
-                      {/* Kesan Pesan untuk Buku */}
+                      {/* Kesan Pesan */}
                       {item.type === "book" && item.kesanPesan && (
-                        <p className="text-[11px] text-slate-300 italic line-clamp-2 bg-slate-900/50 p-1.5 rounded border border-slate-700/30">
+                        <p className="text-[10px] md:text-[11px] text-slate-300 italic line-clamp-2 bg-slate-900/50 p-1.5 rounded border border-slate-700/30">
                           "{item.kesanPesan}"
                         </p>
                       )}
                     </div>
 
                     {/* Action Buttons */}
-                    <div className="flex justify-end space-x-1 pt-2 border-t border-slate-700/50 mt-2">
+                    <div className="flex justify-end space-x-1 pt-2 border-t border-slate-700/50 mt-1">
                       <button
                         onClick={() => openMetaModal(item)}
-                        className="p-1.5 text-slate-400 hover:text-amber-400 hover:bg-slate-700 rounded transition"
-                        title={activeTab === "book" ? "Edit Total Halaman" : "Edit Durasi/Season/Eps"}
+                        className="p-1.5 text-slate-400 hover:text-amber-400 active:bg-slate-700 rounded transition"
+                        title="Edit Struktur"
                       >
                         <Settings2 className="w-3.5 h-3.5" />
                       </button>
                       <button
                         onClick={() => openModal(item)}
-                        className="p-1.5 text-slate-400 hover:text-indigo-400 hover:bg-slate-700 rounded transition"
-                        title="Edit Progress / Status"
+                        className="p-1.5 text-slate-400 hover:text-indigo-400 active:bg-slate-700 rounded transition"
+                        title="Edit Progress"
                       >
                         <Pencil className="w-3.5 h-3.5" />
                       </button>
                       <button
                         onClick={() => handleDelete(item.id)}
-                        className="p-1.5 text-slate-400 hover:text-red-400 hover:bg-slate-700 rounded transition"
+                        className="p-1.5 text-slate-400 hover:text-red-400 active:bg-slate-700 rounded transition"
                         title="Hapus"
                       >
                         <Trash2 className="w-3.5 h-3.5" />
@@ -418,34 +410,65 @@ export default function Dashboard() {
         )}
       </div>
 
-      {/* MODAL UTAMA (TAMBAH / EDIT PROGRESS BIASA) */}
+      {/* FLOATING ACTION BUTTON (FAB) - KHUSUS MOBILE */}
+      <button
+        onClick={() => openModal()}
+        className={`md:hidden fixed bottom-20 right-5 z-40 p-4 rounded-full text-white shadow-2xl transition active:scale-95 ${
+          activeTab === "book" ? "bg-indigo-600 shadow-indigo-600/50" : "bg-pink-600 shadow-pink-600/50"
+        }`}
+      >
+        <Plus className="w-6 h-6" />
+      </button>
+
+      {/* BOTTOM NAVBAR - KHUSUS MOBILE (STYLE APP MOBILE) */}
+      <div className="md:hidden fixed bottom-0 left-0 right-0 bg-slate-900/90 backdrop-blur-md border-t border-slate-800 z-40 px-6 py-2 flex justify-around items-center">
+        <button
+          onClick={() => setActiveTab("book")}
+          className={`flex flex-col items-center space-y-1 transition ${
+            activeTab === "book" ? "text-indigo-400 font-bold" : "text-slate-500"
+          }`}
+        >
+          <Book className="w-5 h-5" />
+          <span className="text-[10px]">Buku</span>
+        </button>
+        <button
+          onClick={() => setActiveTab("movie")}
+          className={`flex flex-col items-center space-y-1 transition ${
+            activeTab === "movie" ? "text-pink-400 font-bold" : "text-slate-500"
+          }`}
+        >
+          <Film className="w-5 h-5" />
+          <span className="text-[10px]">Tontonan</span>
+        </button>
+      </div>
+
+      {/* MODAL UTAMA */}
       {isModalOpen && (
-        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-          <div className="bg-slate-800 border border-slate-700 rounded-2xl max-w-md w-full p-6 relative max-h-[90vh] overflow-y-auto">
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4 z-50">
+          <div className="bg-slate-800 border-t sm:border border-slate-700 rounded-t-3xl sm:rounded-2xl max-w-md w-full p-6 relative max-h-[85vh] sm:max-h-[90vh] overflow-y-auto">
             <button onClick={closeModal} className="absolute top-4 right-4 text-slate-400 hover:text-white">
               <X className="w-5 h-5" />
             </button>
 
-            <h3 className="text-xl font-bold text-white mb-4">
+            <h3 className="text-lg sm:text-xl font-bold text-white mb-4">
               {editingItem ? "Edit Progress Data" : `Tambah ${activeTab === "book" ? "Buku" : "Tontonan"}`}
             </h3>
 
             <form onSubmit={handleSubmit} className="space-y-4">
               <div>
-                <label className="block text-sm text-slate-400 mb-1">Judul</label>
+                <label className="block text-xs text-slate-400 mb-1">Judul</label>
                 <input
                   type="text"
                   required
                   value={formData.title || ""}
                   onChange={(e) => setFormData({ ...formData, title: e.target.value })}
-                  className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-indigo-500"
+                  className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white text-sm focus:outline-none focus:border-indigo-500"
                   placeholder="Judul..."
                 />
               </div>
 
-              {/* Publisher / Penulis */}
               <div>
-                <label className="block text-sm text-slate-400 mb-1">
+                <label className="block text-xs text-slate-400 mb-1">
                   {activeTab === "book" ? "Penulis" : "Publisher / Platform"}
                 </label>
                 {activeTab === "book" ? (
@@ -454,14 +477,14 @@ export default function Dashboard() {
                     required
                     value={formData.subTitle || ""}
                     onChange={(e) => setFormData({ ...formData, subTitle: e.target.value })}
-                    className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-indigo-500"
+                    className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white text-sm focus:outline-none focus:border-indigo-500"
                     placeholder="Nama Penulis..."
                   />
                 ) : (
                   <select
                     value={formData.subTitle || "Netflix"}
                     onChange={(e) => setFormData({ ...formData, subTitle: e.target.value })}
-                    className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-indigo-500"
+                    className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white text-sm focus:outline-none focus:border-indigo-500"
                   >
                     {PUBLISHERS.map((p) => (
                       <option key={p.name} value={p.name}>{p.icon} {p.name}</option>
@@ -470,27 +493,25 @@ export default function Dashboard() {
                 )}
               </div>
 
-              {/* Cover Image URL */}
               <div>
-                <label className="block text-sm text-slate-400 mb-1 flex items-center gap-1">
-                  <ImageIcon className="w-4 h-4" /> URL Cover Image (Opsional)
+                <label className="block text-xs text-slate-400 mb-1 flex items-center gap-1">
+                  <ImageIcon className="w-3.5 h-3.5" /> URL Cover Image (Opsional)
                 </label>
                 <input
                   type="url"
                   value={formData.coverUrl || ""}
                   onChange={(e) => setFormData({ ...formData, coverUrl: e.target.value })}
-                  className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white text-xs focus:outline-none focus:border-indigo-500"
+                  className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white text-xs focus:outline-none focus:border-indigo-500"
                   placeholder="https://... (Link Gambar Portrait)"
                 />
               </div>
 
-              {/* Status */}
               <div>
-                <label className="block text-sm text-slate-400 mb-1">Status</label>
+                <label className="block text-xs text-slate-400 mb-1">Status</label>
                 <select
                   value={formData.status || "Wishlist"}
                   onChange={(e) => setFormData({ ...formData, status: e.target.value as any })}
-                  className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-indigo-500"
+                  className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white text-sm focus:outline-none focus:border-indigo-500"
                 >
                   <option value="Wishlist">✨ Wishlist</option>
                   <option value="On Going">📖 On Going</option>
@@ -498,56 +519,54 @@ export default function Dashboard() {
                 </select>
               </div>
 
-              {/* INPUT BUKU */}
               {activeTab === "book" && (
                 <>
                   <div>
-                    <label className="block text-sm text-slate-400 mb-1">Halaman Sekarang</label>
+                    <label className="block text-xs text-slate-400 mb-1">Halaman Sekarang</label>
                     <input
                       type="number"
                       min="0"
                       value={formData.currentPage || 0}
                       onChange={(e) => setFormData({ ...formData, currentPage: Number(e.target.value) })}
-                      className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-indigo-500"
+                      className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white text-sm focus:outline-none focus:border-indigo-500"
                     />
                   </div>
 
                   {!editingItem && (
                     <div>
-                      <label className="block text-sm text-slate-400 mb-1">Total Halaman Awal</label>
+                      <label className="block text-xs text-slate-400 mb-1">Total Halaman Awal</label>
                       <input
                         type="number"
                         min="1"
                         value={formData.totalPages || 0}
                         onChange={(e) => setFormData({ ...formData, totalPages: Number(e.target.value) })}
-                        className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-indigo-500"
+                        className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white text-sm focus:outline-none focus:border-indigo-500"
                       />
                     </div>
                   )}
 
                   <div>
-                    <label className="block text-sm text-slate-400 mb-1">Kesan & Pesan</label>
+                    <label className="block text-xs text-slate-400 mb-1">Kesan & Pesan</label>
                     <textarea
                       rows={2}
                       value={formData.kesanPesan || ""}
                       onChange={(e) => setFormData({ ...formData, kesanPesan: e.target.value })}
-                      className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-indigo-500 text-xs"
+                      className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white text-xs focus:outline-none focus:border-indigo-500"
                       placeholder="Catatan/Insight..."
                     />
                   </div>
                 </>
               )}
 
-              {/* INPUT TONTONAN */}
               {activeTab === "movie" && (
                 <>
                   {!editingItem && (
                     <div>
-                      <label className="block text-sm text-slate-400 mb-1">Kategori Tontonan</label>
+                      <label className="block text-xs text-slate-400 mb-1">Kategori Tontonan</label>
                       <select
                         value={formData.mediaCategory || "film"}
                         onChange={(e) => setFormData({ ...formData, mediaCategory: e.target.value as any })}
-                        className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-indigo-500"
+                        className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white text-sm focus:outline-none focus:border-indigo-500"
                       >
                         <option value="film">Film (Movie)</option>
                         <option value="series">Series / TV Show</option>
@@ -557,24 +576,24 @@ export default function Dashboard() {
 
                   {formData.mediaCategory === "film" ? (
                     <div>
-                      <label className="block text-sm text-slate-400 mb-1">Progress Nonton (Dalam Menit)</label>
+                      <label className="block text-xs text-slate-400 mb-1">Progress Nonton (Menit)</label>
                       <input
                         type="number"
                         min="0"
                         value={formData.movieProgressMinutes || 0}
                         onChange={(e) => setFormData({ ...formData, movieProgressMinutes: Number(e.target.value) })}
-                        className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-indigo-500"
+                        className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white text-sm focus:outline-none focus:border-indigo-500"
                       />
                     </div>
                   ) : (
                     <div>
-                      <label className="block text-sm text-slate-400 mb-1">Episode yang Sudah Ditonton</label>
+                      <label className="block text-xs text-slate-400 mb-1">Episode yang Ditonton</label>
                       <input
                         type="number"
                         min="0"
                         value={formData.seriesProgressEps || 0}
                         onChange={(e) => setFormData({ ...formData, seriesProgressEps: Number(e.target.value) })}
-                        className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-indigo-500"
+                        className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white text-sm focus:outline-none focus:border-indigo-500"
                       />
                     </div>
                   )}
@@ -582,55 +601,54 @@ export default function Dashboard() {
                   {!editingItem && (
                     formData.mediaCategory === "film" ? (
                       <div>
-                        <label className="block text-sm text-slate-400 mb-1">Durasi Total (Menit)</label>
+                        <label className="block text-xs text-slate-400 mb-1">Durasi Total (Menit)</label>
                         <input
                           type="number"
                           min="1"
                           value={formData.movieDurationMinutes || 0}
                           onChange={(e) => setFormData({ ...formData, movieDurationMinutes: Number(e.target.value) })}
-                          className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-indigo-500"
+                          className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white text-sm focus:outline-none focus:border-indigo-500"
                         />
                       </div>
                     ) : (
                       <div className="grid grid-cols-2 gap-3">
                         <div>
-                          <label className="block text-sm text-slate-400 mb-1">Total Season</label>
+                          <label className="block text-xs text-slate-400 mb-1">Total Season</label>
                           <input
                             type="number"
                             min="1"
                             value={formData.seriesSeasons || 1}
                             onChange={(e) => setFormData({ ...formData, seriesSeasons: Number(e.target.value) })}
-                            className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-indigo-500"
+                            className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white text-sm focus:outline-none focus:border-indigo-500"
                           />
                         </div>
                         <div>
-                          <label className="block text-sm text-slate-400 mb-1">Total Episode</label>
+                          <label className="block text-xs text-slate-400 mb-1">Total Episode</label>
                           <input
                             type="number"
                             min="1"
                             value={formData.seriesEpisodes || 1}
                             onChange={(e) => setFormData({ ...formData, seriesEpisodes: Number(e.target.value) })}
-                            className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-indigo-500"
+                            className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white text-sm focus:outline-none focus:border-indigo-500"
                           />
                         </div>
                       </div>
                     )
                   )}
 
-                  {/* Rating Hanya Terbuka Jika Status = Selesai */}
                   {formData.status === "Selesai" && (
                     <div>
-                      <label className="block text-sm text-slate-400 mb-1">Rating Bintang</label>
+                      <label className="block text-xs text-slate-400 mb-1">Rating Bintang</label>
                       <select
                         value={formData.rating || 5}
                         onChange={(e) => setFormData({ ...formData, rating: Number(e.target.value) })}
-                        className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-indigo-500"
+                        className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white text-sm focus:outline-none focus:border-indigo-500"
                       >
-                        <option value="5">⭐⭐⭐⭐⭐ </option>
-                        <option value="4">⭐⭐⭐⭐ </option>
-                        <option value="3">⭐⭐⭐ </option>
-                        <option value="2">⭐⭐ </option>
-                        <option value="1">⭐ </option>
+                        <option value="5">⭐⭐⭐⭐⭐ (5 Bintang)</option>
+                        <option value="4">⭐⭐⭐⭐ (4 Bintang)</option>
+                        <option value="3">⭐⭐⭐ (3 Bintang)</option>
+                        <option value="2">⭐⭐ (2 Bintang)</option>
+                        <option value="1">⭐ (1 Bintang)</option>
                       </select>
                     </div>
                   )}
@@ -641,7 +659,7 @@ export default function Dashboard() {
                 <button type="button" onClick={closeModal} className="px-4 py-2 text-slate-400 hover:text-white text-sm">
                   Batal
                 </button>
-                <button type="submit" className="bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-lg text-sm">
+                <button type="submit" className="bg-indigo-600 hover:bg-indigo-500 text-white px-5 py-2 rounded-xl text-sm font-medium">
                   Simpan
                 </button>
               </div>
@@ -650,61 +668,61 @@ export default function Dashboard() {
         </div>
       )}
 
-      {/* MODAL KHUSUS EDIT META (PENGATURAN AWAL) */}
+      {/* MODAL EDIT META */}
       {isMetaModalOpen && (
-        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-          <div className="bg-slate-800 border border-slate-700 rounded-2xl max-w-md w-full p-6 relative">
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4 z-50">
+          <div className="bg-slate-800 border-t sm:border border-slate-700 rounded-t-3xl sm:rounded-2xl max-w-md w-full p-6 relative">
             <button onClick={closeModal} className="absolute top-4 right-4 text-slate-400 hover:text-white">
               <X className="w-5 h-5" />
             </button>
 
-            <h3 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
-              <Settings2 className="w-5 h-5 text-amber-400" /> Pengaturan Struktur
+            <h3 className="text-base sm:text-lg font-bold text-white mb-4 flex items-center gap-2">
+              <Settings2 className="w-5 h-5 text-amber-400" /> Edit Pengaturan Struktur
             </h3>
 
             <form onSubmit={handleSubmit} className="space-y-4">
               {activeTab === "book" ? (
                 <div>
-                  <label className="block text-sm text-slate-400 mb-1">Ubah Total Halaman Buku</label>
+                  <label className="block text-xs text-slate-400 mb-1">Total Halaman Buku</label>
                   <input
                     type="number"
                     min="1"
                     value={formData.totalPages || 0}
                     onChange={(e) => setFormData({ ...formData, totalPages: Number(e.target.value) })}
-                    className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-indigo-500"
+                    className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white text-sm focus:outline-none focus:border-indigo-500"
                   />
                 </div>
               ) : formData.mediaCategory === "film" ? (
                 <div>
-                  <label className="block text-sm text-slate-400 mb-1">Ubah Total Durasi Film (Dalam Menit)</label>
+                  <label className="block text-xs text-slate-400 mb-1">Total Durasi Film (Menit)</label>
                   <input
                     type="number"
                     min="1"
                     value={formData.movieDurationMinutes || 0}
                     onChange={(e) => setFormData({ ...formData, movieDurationMinutes: Number(e.target.value) })}
-                    className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-indigo-500"
+                    className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white text-sm focus:outline-none focus:border-indigo-500"
                   />
                 </div>
               ) : (
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="block text-sm text-slate-400 mb-1">Ubah Total Season</label>
+                    <label className="block text-xs text-slate-400 mb-1">Total Season</label>
                     <input
                       type="number"
                       min="1"
                       value={formData.seriesSeasons || 1}
                       onChange={(e) => setFormData({ ...formData, seriesSeasons: Number(e.target.value) })}
-                      className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-indigo-500"
+                      className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white text-sm focus:outline-none focus:border-indigo-500"
                     />
                   </div>
                   <div>
-                    <label className="block text-sm text-slate-400 mb-1">Ubah Total Episode</label>
+                    <label className="block text-xs text-slate-400 mb-1">Total Episode</label>
                     <input
                       type="number"
                       min="1"
                       value={formData.seriesEpisodes || 1}
                       onChange={(e) => setFormData({ ...formData, seriesEpisodes: Number(e.target.value) })}
-                      className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-indigo-500"
+                      className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white text-sm focus:outline-none focus:border-indigo-500"
                     />
                   </div>
                 </div>
@@ -714,7 +732,7 @@ export default function Dashboard() {
                 <button type="button" onClick={closeModal} className="px-4 py-2 text-slate-400 hover:text-white text-sm">
                   Batal
                 </button>
-                <button type="submit" className="bg-amber-600 hover:bg-amber-500 text-white px-4 py-2 rounded-lg text-sm font-medium">
+                <button type="submit" className="bg-amber-600 hover:bg-amber-500 text-white px-5 py-2 rounded-xl text-sm font-medium">
                   Update Struktur
                 </button>
               </div>
