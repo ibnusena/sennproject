@@ -15,16 +15,17 @@ import {
 } from "firebase/firestore";
 import { auth, db } from "@/lib/firebase";
 import { useRouter } from "next/navigation";
-import { Book, Film, LogOut, Plus, Star, Loader2, Pencil, Trash2, X, BookmarkCheck, PlayCircle, HeartHandshake } from "lucide-react";
+import { Book, Film, LogOut, Plus, Star, Loader2, Pencil, Trash2, X, Settings2, Image as ImageIcon } from "lucide-react";
 
 interface MediaItem {
   id: string;
   type: "book" | "movie";
   title: string;
-  subTitle: string; // Penulis atau Publisher
+  subTitle: string; // Publisher atau Penulis
   status: "Wishlist" | "On Going" | "Selesai";
   userId: string;
-  
+  coverUrl?: string; // Cover Portrait
+
   // Custom Fields Buku
   currentPage?: number;
   totalPages?: number;
@@ -32,13 +33,21 @@ interface MediaItem {
 
   // Custom Fields Tontonan
   mediaCategory?: "film" | "series";
-  movieDuration?: number; // menit
-  movieProgress?: number; // menit
+  movieDurationMinutes?: number; // Total durasi dalam menit
+  movieProgressMinutes?: number; // Progress dalam menit
   seriesSeasons?: number;
   seriesEpisodes?: number;
   seriesProgressEps?: number;
-  rating?: number; // 1-5
+  rating?: number; // 1-5 bintang
 }
+
+const PUBLISHERS = [
+  { name: "Netflix", color: "bg-red-600/20 text-red-400 border-red-500/30", icon: "🔴" },
+  { name: "Disney+", color: "bg-blue-600/20 text-blue-400 border-blue-500/30", icon: "🟦" },
+  { name: "HBO", color: "bg-purple-600/20 text-purple-400 border-purple-500/30", icon: "🟣" },
+  { name: "VIU", color: "bg-amber-500/20 text-amber-400 border-amber-500/30", icon: "🟡" },
+  { name: "Vidio", color: "bg-rose-600/20 text-rose-400 border-rose-500/30", icon: "🔴" },
+];
 
 export default function Dashboard() {
   const router = useRouter();
@@ -47,21 +56,25 @@ export default function Dashboard() {
   const [activeTab, setActiveTab] = useState<"book" | "movie">("book");
   const [items, setItems] = useState<MediaItem[]>([]);
 
-  // State Modal
+  // State Modal Utama (Tambah/Edit Progress Biasa)
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<MediaItem | null>(null);
+
+  // State Modal Khusus Edit Meta (Halaman/Durasi/Season/Eps)
+  const [isMetaModalOpen, setIsMetaModalOpen] = useState(false);
 
   // Form State
   const [formData, setFormData] = useState<Partial<MediaItem>>({
     title: "",
-    subTitle: "",
+    subTitle: "Netflix",
     status: "Wishlist",
+    coverUrl: "",
     currentPage: 0,
     totalPages: 0,
     kesanPesan: "",
     mediaCategory: "film",
-    movieDuration: 0,
-    movieProgress: 0,
+    movieDurationMinutes: 0,
+    movieProgressMinutes: 0,
     seriesSeasons: 1,
     seriesEpisodes: 1,
     seriesProgressEps: 0,
@@ -96,6 +109,14 @@ export default function Dashboard() {
     return () => unsubscribeAuth();
   }, [router]);
 
+  // Helper Format Waktu Menit ke "X j Y m"
+  const formatTime = (totalMinutes: number = 0) => {
+    const hours = Math.floor(totalMinutes / 60);
+    const minutes = totalMinutes % 60;
+    if (hours === 0) return `${minutes}m`;
+    return `${hours}j ${minutes}m`;
+  };
+
   const openModal = (itemToEdit?: MediaItem) => {
     if (itemToEdit) {
       setEditingItem(itemToEdit);
@@ -104,14 +125,15 @@ export default function Dashboard() {
       setEditingItem(null);
       setFormData({
         title: "",
-        subTitle: "",
+        subTitle: activeTab === "book" ? "" : "Netflix",
         status: "Wishlist",
+        coverUrl: "",
         currentPage: 0,
         totalPages: 0,
         kesanPesan: "",
         mediaCategory: "film",
-        movieDuration: 0,
-        movieProgress: 0,
+        movieDurationMinutes: 0,
+        movieProgressMinutes: 0,
         seriesSeasons: 1,
         seriesEpisodes: 1,
         seriesProgressEps: 0,
@@ -121,8 +143,15 @@ export default function Dashboard() {
     setIsModalOpen(true);
   };
 
+  const openMetaModal = (item: MediaItem) => {
+    setEditingItem(item);
+    setFormData(item);
+    setIsMetaModalOpen(true);
+  };
+
   const closeModal = () => {
     setIsModalOpen(false);
+    setIsMetaModalOpen(false);
     setEditingItem(null);
   };
 
@@ -168,15 +197,14 @@ export default function Dashboard() {
     router.push("/");
   };
 
-  // Helper kalkulasi persentase progres
   const calculateProgress = (item: MediaItem) => {
     if (item.type === "book") {
       if (!item.totalPages || item.totalPages === 0) return 0;
       return Math.min(100, Math.round(((item.currentPage || 0) / item.totalPages) * 100));
     } else {
       if (item.mediaCategory === "film") {
-        if (!item.movieDuration || item.movieDuration === 0) return 0;
-        return Math.min(100, Math.round(((item.movieProgress || 0) / item.movieDuration) * 100));
+        if (!item.movieDurationMinutes || item.movieDurationMinutes === 0) return 0;
+        return Math.min(100, Math.round(((item.movieProgressMinutes || 0) / item.movieDurationMinutes) * 100));
       } else {
         if (!item.seriesEpisodes || item.seriesEpisodes === 0) return 0;
         return Math.min(100, Math.round(((item.seriesProgressEps || 0) / item.seriesEpisodes) * 100));
@@ -192,7 +220,11 @@ export default function Dashboard() {
     );
   }
 
-  const filteredItems = items.filter((item) => item.type === activeTab);
+  // Sorting: Wishlist (1) -> On Going (2) -> Selesai (3)
+  const statusOrder = { Wishlist: 1, "On Going": 2, Selesai: 3 };
+  const filteredItems = items
+    .filter((item) => item.type === activeTab)
+    .sort((a, b) => (statusOrder[a.status] || 99) - (statusOrder[b.status] || 99));
 
   return (
     <div className="bg-slate-900 text-slate-100 min-h-screen font-sans p-4 md:p-8">
@@ -266,99 +298,117 @@ export default function Dashboard() {
         {/* Grid List Data */}
         {filteredItems.length === 0 ? (
           <div className="text-center py-12 bg-slate-800/20 border border-dashed border-slate-800 rounded-2xl">
-            <p className="text-slate-500">Belum ada data. Klik tombol di atas buat nambahin!</p>
+            <p className="text-slate-500">Belum ada data. Klik tombol di atas untuk menambahkan!</p>
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {filteredItems.map((item) => {
               const progress = calculateProgress(item);
+              const pubInfo = PUBLISHERS.find((p) => p.name === item.subTitle);
 
               return (
-                <div key={item.id} className="bg-slate-800 border border-slate-700/60 p-5 rounded-xl flex flex-col justify-between group relative">
-                  <div>
-                    {/* Badge Status & Kategori */}
-                    <div className="flex justify-between items-center mb-3">
-                      <span className={`text-xs px-2.5 py-1 rounded-full font-medium border ${
-                        item.status === "Selesai" 
-                          ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20" 
-                          : item.status === "On Going" 
-                          ? "bg-amber-500/10 text-amber-400 border-amber-500/20" 
-                          : "bg-blue-500/10 text-blue-400 border-blue-500/20"
-                      }`}>
-                        {item.status === "Wishlist" ? "✨ Wishlist (Ayo Baca/Tonton!)" : item.status === "On Going" ? "📖 Sedang Dibaca/Ditonton" : "✅ Selesai"}
-                      </span>
+                <div key={item.id} className="bg-slate-800 border border-slate-700/60 p-5 rounded-xl flex gap-4 group relative overflow-hidden">
+                  {/* Cover Portrait (Opsional) */}
+                  {item.coverUrl && (
+                    <div className="w-24 h-36 flex-shrink-0 rounded-lg overflow-hidden bg-slate-900 border border-slate-700">
+                      <img src={item.coverUrl} alt={item.title} className="w-full h-full object-cover" />
+                    </div>
+                  )}
 
-                      {item.type === "movie" && (
-                        <span className="text-xs uppercase px-2 py-0.5 rounded bg-slate-700 text-slate-300 font-semibold">
-                          {item.mediaCategory}
+                  <div className="flex-1 flex flex-col justify-between">
+                    <div>
+                      {/* Badge Status */}
+                      <div className="flex justify-between items-center mb-2 gap-1 flex-wrap">
+                        <span className={`text-[11px] px-2 py-0.5 rounded-full font-medium border ${
+                          item.status === "Selesai" 
+                            ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20" 
+                            : item.status === "On Going" 
+                            ? "bg-amber-500/10 text-amber-400 border-amber-500/20" 
+                            : "bg-blue-500/10 text-blue-400 border-blue-500/20"
+                        }`}>
+                          {item.status === "Wishlist" ? "✨ Wishlist" : item.status === "On Going" ? "📖 On Going" : "🏆 Tamat"}
                         </span>
+
+                        {/* Badge Publisher dengan Warna */}
+                        {item.type === "movie" && (
+                          <span className={`text-[11px] px-2 py-0.5 rounded border font-semibold flex items-center gap-1 ${pubInfo?.color || "bg-slate-700 text-slate-300 border-slate-600"}`}>
+                            <span>{pubInfo?.icon || "🎬"}</span>
+                            <span>{item.subTitle}</span>
+                          </span>
+                        )}
+                      </div>
+
+                      <h4 className="font-bold text-white text-base leading-snug line-clamp-1">{item.title}</h4>
+                      {item.type === "book" && <p className="text-slate-400 text-xs mb-3">{item.subTitle}</p>}
+
+                      {/* Progress Bar */}
+                      <div className="mt-2 mb-3">
+                        <div className="flex justify-between text-xs text-slate-400 mb-1">
+                          <span>Progress</span>
+                          <span className="font-semibold text-indigo-400">{progress}%</span>
+                        </div>
+                        <div className="w-full bg-slate-700 h-1.5 rounded-full overflow-hidden">
+                          <div 
+                            className={`h-full transition-all duration-300 ${activeTab === "book" ? "bg-indigo-500" : "bg-pink-500"}`}
+                            style={{ width: `${progress}%` }}
+                          ></div>
+                        </div>
+
+                        <p className="text-[11px] text-slate-400 mt-1">
+                          {item.type === "book" ? (
+                            `${item.currentPage || 0} / ${item.totalPages || 0} hal`
+                          ) : item.mediaCategory === "film" ? (
+                            `${formatTime(item.movieProgressMinutes)} / ${formatTime(item.movieDurationMinutes)}`
+                          ) : (
+                            `${item.seriesProgressEps || 0} / ${item.seriesEpisodes || 0} eps (${item.seriesSeasons || 1} Season)`
+                          )}
+                        </p>
+                      </div>
+
+                      {/* Rating (Hanya Muncul Jika Selesai) */}
+                      {item.type === "movie" && item.status === "Selesai" && item.rating && (
+                        <div className="flex items-center space-x-1 mb-2">
+                          {Array.from({ length: 5 }).map((_, i) => (
+                            <Star 
+                              key={i} 
+                              className={`w-3.5 h-3.5 ${i < (item.rating || 0) ? "text-amber-400 fill-amber-400" : "text-slate-600"}`} 
+                            />
+                          ))}
+                        </div>
+                      )}
+
+                      {/* Kesan Pesan untuk Buku */}
+                      {item.type === "book" && item.kesanPesan && (
+                        <p className="text-[11px] text-slate-300 italic line-clamp-2 bg-slate-900/50 p-1.5 rounded border border-slate-700/30">
+                          "{item.kesanPesan}"
+                        </p>
                       )}
                     </div>
 
-                    <h4 className="font-bold text-white text-lg">{item.title}</h4>
-                    <p className="text-slate-400 text-sm mb-4">{item.subTitle}</p>
-
-                    {/* Progress Bar */}
-                    <div className="mb-4">
-                      <div className="flex justify-between text-xs text-slate-400 mb-1">
-                        <span>Progress</span>
-                        <span className="font-semibold text-indigo-400">{progress}%</span>
-                      </div>
-                      <div className="w-full bg-slate-700 h-2 rounded-full overflow-hidden">
-                        <div 
-                          className={`h-full transition-all duration-300 ${activeTab === "book" ? "bg-indigo-500" : "bg-pink-500"}`}
-                          style={{ width: `${progress}%` }}
-                        ></div>
-                      </div>
-
-                      {/* Detail Angka Progress */}
-                      <p className="text-xs text-slate-400 mt-1">
-                        {item.type === "book" ? (
-                          `${item.currentPage || 0} / ${item.totalPages || 0} halaman`
-                        ) : item.mediaCategory === "film" ? (
-                          `${item.movieProgress || 0} / ${item.movieDuration || 0} menit`
-                        ) : (
-                          `${item.seriesProgressEps || 0} / ${item.seriesEpisodes || 0} eps (${item.seriesSeasons || 1} Season)`
-                        )}
-                      </p>
+                    {/* Action Buttons */}
+                    <div className="flex justify-end space-x-1 pt-2 border-t border-slate-700/50 mt-2">
+                      <button
+                        onClick={() => openMetaModal(item)}
+                        className="p-1.5 text-slate-400 hover:text-amber-400 hover:bg-slate-700 rounded transition"
+                        title={activeTab === "book" ? "Edit Total Halaman" : "Edit Durasi/Season/Eps"}
+                      >
+                        <Settings2 className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        onClick={() => openModal(item)}
+                        className="p-1.5 text-slate-400 hover:text-indigo-400 hover:bg-slate-700 rounded transition"
+                        title="Edit Progress / Status"
+                      >
+                        <Pencil className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        onClick={() => handleDelete(item.id)}
+                        className="p-1.5 text-slate-400 hover:text-red-400 hover:bg-slate-700 rounded transition"
+                        title="Hapus"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
                     </div>
-
-                    {/* Rating untuk Tontonan */}
-                    {item.type === "movie" && item.rating && (
-                      <div className="flex items-center space-x-1 mb-3">
-                        {Array.from({ length: 5 }).map((_, i) => (
-                          <Star 
-                            key={i} 
-                            className={`w-4 h-4 ${i < (item.rating || 0) ? "text-amber-400 fill-amber-400" : "text-slate-600"}`} 
-                          />
-                        ))}
-                      </div>
-                    )}
-
-                    {/* Kesan Pesan untuk Buku */}
-                    {item.type === "book" && item.kesanPesan && (
-                      <div className="bg-slate-900/60 p-3 rounded-lg border border-slate-700/40 mt-2 text-xs text-slate-300 italic">
-                        "{item.kesanPesan}"
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Tombol Action Edit & Delete */}
-                  <div className="flex justify-end space-x-2 pt-4 mt-4 border-t border-slate-700/50">
-                    <button
-                      onClick={() => openModal(item)}
-                      className="p-1.5 text-slate-400 hover:text-indigo-400 hover:bg-slate-700 rounded-lg transition"
-                      title="Edit"
-                    >
-                      <Pencil className="w-4 h-4" />
-                    </button>
-                    <button
-                      onClick={() => handleDelete(item.id)}
-                      className="p-1.5 text-slate-400 hover:text-red-400 hover:bg-slate-700 rounded-lg transition"
-                      title="Hapus"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
                   </div>
                 </div>
               );
@@ -367,19 +417,16 @@ export default function Dashboard() {
         )}
       </div>
 
-      {/* MODAL EDIT / TAMBAH DATA */}
+      {/* MODAL UTAMA (TAMBAH / EDIT PROGRESS BIASA) */}
       {isModalOpen && (
         <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50">
           <div className="bg-slate-800 border border-slate-700 rounded-2xl max-w-md w-full p-6 relative max-h-[90vh] overflow-y-auto">
-            <button
-              onClick={closeModal}
-              className="absolute top-4 right-4 text-slate-400 hover:text-white"
-            >
+            <button onClick={closeModal} className="absolute top-4 right-4 text-slate-400 hover:text-white">
               <X className="w-5 h-5" />
             </button>
 
             <h3 className="text-xl font-bold text-white mb-4">
-              {editingItem ? "Edit Data" : `Tambah ${activeTab === "book" ? "Buku" : "Tontonan"}`}
+              {editingItem ? "Edit Progress Data" : `Tambah ${activeTab === "book" ? "Buku" : "Tontonan"}`}
             </h3>
 
             <form onSubmit={handleSubmit} className="space-y-4">
@@ -391,24 +438,52 @@ export default function Dashboard() {
                   value={formData.title || ""}
                   onChange={(e) => setFormData({ ...formData, title: e.target.value })}
                   className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-indigo-500"
-                  placeholder="Contoh: Atomic Habits / Stranger Things"
+                  placeholder="Judul..."
                 />
               </div>
 
+              {/* Publisher / Penulis */}
               <div>
                 <label className="block text-sm text-slate-400 mb-1">
-                  {activeTab === "book" ? "Penulis" : "Platform / Publisher"}
+                  {activeTab === "book" ? "Penulis" : "Publisher / Platform"}
+                </label>
+                {activeTab === "book" ? (
+                  <input
+                    type="text"
+                    required
+                    value={formData.subTitle || ""}
+                    onChange={(e) => setFormData({ ...formData, subTitle: e.target.value })}
+                    className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-indigo-500"
+                    placeholder="Nama Penulis..."
+                  />
+                ) : (
+                  <select
+                    value={formData.subTitle || "Netflix"}
+                    onChange={(e) => setFormData({ ...formData, subTitle: e.target.value })}
+                    className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-indigo-500"
+                  >
+                    {PUBLISHERS.map((p) => (
+                      <option key={p.name} value={p.name}>{p.icon} {p.name}</option>
+                    ))}
+                  </select>
+                )}
+              </div>
+
+              {/* Cover Image URL */}
+              <div>
+                <label className="block text-sm text-slate-400 mb-1 flex items-center gap-1">
+                  <ImageIcon className="w-4 h-4" /> URL Cover Image (Opsional)
                 </label>
                 <input
-                  type="text"
-                  required
-                  value={formData.subTitle || ""}
-                  onChange={(e) => setFormData({ ...formData, subTitle: e.target.value })}
-                  className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-indigo-500"
-                  placeholder={activeTab === "book" ? "James Clear" : "Netflix"}
+                  type="url"
+                  value={formData.coverUrl || ""}
+                  onChange={(e) => setFormData({ ...formData, coverUrl: e.target.value })}
+                  className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white text-xs focus:outline-none focus:border-indigo-500"
+                  placeholder="https://... (Link Gambar Portrait)"
                 />
               </div>
 
+              {/* Status */}
               <div>
                 <label className="block text-sm text-slate-400 mb-1">Status</label>
                 <select
@@ -416,28 +491,29 @@ export default function Dashboard() {
                   onChange={(e) => setFormData({ ...formData, status: e.target.value as any })}
                   className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-indigo-500"
                 >
-                  <option value="Wishlist">✨ Wishlist (Rencana / Ayo Baca!)</option>
-                  <option value="On Going">📖 On Going (Sedang Berjalan)</option>
-                  <option value="Selesai">✅ Selesai</option>
+                  <option value="Wishlist">✨ Wishlist</option>
+                  <option value="On Going">📖 On Going</option>
+                  <option value="Selesai">🏆 Selesai</option>
                 </select>
               </div>
 
-              {/* INPUT SPESIFIK BUKU */}
+              {/* INPUT BUKU */}
               {activeTab === "book" && (
                 <>
-                  <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-sm text-slate-400 mb-1">Halaman Sekarang</label>
+                    <input
+                      type="number"
+                      min="0"
+                      value={formData.currentPage || 0}
+                      onChange={(e) => setFormData({ ...formData, currentPage: Number(e.target.value) })}
+                      className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-indigo-500"
+                    />
+                  </div>
+
+                  {!editingItem && (
                     <div>
-                      <label className="block text-sm text-slate-400 mb-1">Halaman Sekarang</label>
-                      <input
-                        type="number"
-                        min="0"
-                        value={formData.currentPage || 0}
-                        onChange={(e) => setFormData({ ...formData, currentPage: Number(e.target.value) })}
-                        className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-indigo-500"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm text-slate-400 mb-1">Total Halaman</label>
+                      <label className="block text-sm text-slate-400 mb-1">Total Halaman Awal</label>
                       <input
                         type="number"
                         min="1"
@@ -446,124 +522,199 @@ export default function Dashboard() {
                         className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-indigo-500"
                       />
                     </div>
-                  </div>
+                  )}
 
                   <div>
-                    <label className="block text-sm text-slate-400 mb-1">Kesan & Pesan (Quote / Insight)</label>
+                    <label className="block text-sm text-slate-400 mb-1">Kesan & Pesan</label>
                     <textarea
-                      rows={3}
+                      rows={2}
                       value={formData.kesanPesan || ""}
                       onChange={(e) => setFormData({ ...formData, kesanPesan: e.target.value })}
-                      className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-indigo-500"
-                      placeholder="Apa hal berharga yang kamu dapat dari buku ini?"
+                      className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-indigo-500 text-xs"
+                      placeholder="Catatan/Insight..."
                     />
                   </div>
                 </>
               )}
 
-              {/* INPUT SPESIFIK TONTONAN */}
+              {/* INPUT TONTONAN */}
               {activeTab === "movie" && (
                 <>
-                  <div>
-                    <label className="block text-sm text-slate-400 mb-1">Kategori Tontonan</label>
-                    <select
-                      value={formData.mediaCategory || "film"}
-                      onChange={(e) => setFormData({ ...formData, mediaCategory: e.target.value as any })}
-                      className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-indigo-500"
-                    >
-                      <option value="film">Film (Movie)</option>
-                      <option value="series">Series / TV Show</option>
-                    </select>
-                  </div>
-
-                  {formData.mediaCategory === "film" ? (
-                    <div className="grid grid-cols-2 gap-3">
-                      <div>
-                        <label className="block text-sm text-slate-400 mb-1">Posisi Menit Ke-</label>
-                        <input
-                          type="number"
-                          min="0"
-                          value={formData.movieProgress || 0}
-                          onChange={(e) => setFormData({ ...formData, movieProgress: Number(e.target.value) })}
-                          className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-indigo-500"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-sm text-slate-400 mb-1">Durasi Film (Menit)</label>
-                        <input
-                          type="number"
-                          min="1"
-                          value={formData.movieDuration || 0}
-                          onChange={(e) => setFormData({ ...formData, movieDuration: Number(e.target.value) })}
-                          className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-indigo-500"
-                        />
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="grid grid-cols-3 gap-2">
-                      <div>
-                        <label className="block text-xs text-slate-400 mb-1">Total Season</label>
-                        <input
-                          type="number"
-                          min="1"
-                          value={formData.seriesSeasons || 1}
-                          onChange={(e) => setFormData({ ...formData, seriesSeasons: Number(e.target.value) })}
-                          className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-indigo-500"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-xs text-slate-400 mb-1">Total Eps</label>
-                        <input
-                          type="number"
-                          min="1"
-                          value={formData.seriesEpisodes || 1}
-                          onChange={(e) => setFormData({ ...formData, seriesEpisodes: Number(e.target.value) })}
-                          className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-indigo-500"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-xs text-slate-400 mb-1">Eps Ditonton</label>
-                        <input
-                          type="number"
-                          min="0"
-                          value={formData.seriesProgressEps || 0}
-                          onChange={(e) => setFormData({ ...formData, seriesProgressEps: Number(e.target.value) })}
-                          className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-indigo-500"
-                        />
-                      </div>
+                  {!editingItem && (
+                    <div>
+                      <label className="block text-sm text-slate-400 mb-1">Kategori Tontonan</label>
+                      <select
+                        value={formData.mediaCategory || "film"}
+                        onChange={(e) => setFormData({ ...formData, mediaCategory: e.target.value as any })}
+                        className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-indigo-500"
+                      >
+                        <option value="film">Film (Movie)</option>
+                        <option value="series">Series / TV Show</option>
+                      </select>
                     </div>
                   )}
 
-                  <div>
-                    <label className="block text-sm text-slate-400 mb-1">Rating (1-5 Bintang)</label>
-                    <select
-                      value={formData.rating || 5}
-                      onChange={(e) => setFormData({ ...formData, rating: Number(e.target.value) })}
-                      className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-indigo-500"
-                    >
-                      <option value="5">⭐⭐⭐⭐⭐ (5/5)</option>
-                      <option value="4">⭐⭐⭐⭐ (4/5)</option>
-                      <option value="3">⭐⭐⭐ (3/5)</option>
-                      <option value="2">⭐⭐ (2/5)</option>
-                      <option value="1">⭐ (1/5)</option>
-                    </select>
-                  </div>
+                  {formData.mediaCategory === "film" ? (
+                    <div>
+                      <label className="block text-sm text-slate-400 mb-1">Progress Nonton (Dalam Menit)</label>
+                      <input
+                        type="number"
+                        min="0"
+                        value={formData.movieProgressMinutes || 0}
+                        onChange={(e) => setFormData({ ...formData, movieProgressMinutes: Number(e.target.value) })}
+                        className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-indigo-500"
+                      />
+                    </div>
+                  ) : (
+                    <div>
+                      <label className="block text-sm text-slate-400 mb-1">Episode yang Sudah Ditonton</label>
+                      <input
+                        type="number"
+                        min="0"
+                        value={formData.seriesProgressEps || 0}
+                        onChange={(e) => setFormData({ ...formData, seriesProgressEps: Number(e.target.value) })}
+                        className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-indigo-500"
+                      />
+                    </div>
+                  )}
+
+                  {!editingItem && (
+                    formData.mediaCategory === "film" ? (
+                      <div>
+                        <label className="block text-sm text-slate-400 mb-1">Durasi Total (Menit)</label>
+                        <input
+                          type="number"
+                          min="1"
+                          value={formData.movieDurationMinutes || 0}
+                          onChange={(e) => setFormData({ ...formData, movieDurationMinutes: Number(e.target.value) })}
+                          className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-indigo-500"
+                        />
+                      </div>
+                    ) : (
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label className="block text-sm text-slate-400 mb-1">Total Season</label>
+                          <input
+                            type="number"
+                            min="1"
+                            value={formData.seriesSeasons || 1}
+                            onChange={(e) => setFormData({ ...formData, seriesSeasons: Number(e.target.value) })}
+                            className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-indigo-500"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-sm text-slate-400 mb-1">Total Episode</label>
+                          <input
+                            type="number"
+                            min="1"
+                            value={formData.seriesEpisodes || 1}
+                            onChange={(e) => setFormData({ ...formData, seriesEpisodes: Number(e.target.value) })}
+                            className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-indigo-500"
+                          />
+                        </div>
+                      </div>
+                    )
+                  )}
+
+                  {/* Rating Hanya Terbuka Jika Status = Selesai */}
+                  {formData.status === "Selesai" && (
+                    <div>
+                      <label className="block text-sm text-slate-400 mb-1">Rating Bintang</label>
+                      <select
+                        value={formData.rating || 5}
+                        onChange={(e) => setFormData({ ...formData, rating: Number(e.target.value) })}
+                        className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-indigo-500"
+                      >
+                        <option value="5">⭐⭐⭐⭐⭐ (5 Bintang)</option>
+                        <option value="4">⭐⭐⭐⭐ (4 Bintang)</option>
+                        <option value="3">⭐⭐⭐ (3 Bintang)</option>
+                        <option value="2">⭐⭐ (2 Bintang)</option>
+                        <option value="1">⭐ (1 Bintang)</option>
+                      </select>
+                    </div>
+                  )}
                 </>
               )}
 
               <div className="flex justify-end space-x-3 pt-4 border-t border-slate-700">
-                <button
-                  type="button"
-                  onClick={closeModal}
-                  className="px-4 py-2 text-slate-400 hover:text-white text-sm font-medium"
-                >
+                <button type="button" onClick={closeModal} className="px-4 py-2 text-slate-400 hover:text-white text-sm">
                   Batal
                 </button>
-                <button
-                  type="submit"
-                  className="bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-lg text-sm font-medium"
-                >
-                  {editingItem ? "Update Data" : "Simpan"}
+                <button type="submit" className="bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-lg text-sm">
+                  Simpan
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL KHUSUS EDIT META (PENGATURAN AWAL) */}
+      {isMetaModalOpen && (
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div className="bg-slate-800 border border-slate-700 rounded-2xl max-w-md w-full p-6 relative">
+            <button onClick={closeModal} className="absolute top-4 right-4 text-slate-400 hover:text-white">
+              <X className="w-5 h-5" />
+            </button>
+
+            <h3 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
+              <Settings2 className="w-5 h-5 text-amber-400" /> Pengaturan Struktur
+            </h3>
+
+            <form onSubmit={handleSubmit} className="space-y-4">
+              {activeTab === "book" ? (
+                <div>
+                  <label className="block text-sm text-slate-400 mb-1">Ubah Total Halaman Buku</label>
+                  <input
+                    type="number"
+                    min="1"
+                    value={formData.totalPages || 0}
+                    onChange={(e) => setFormData({ ...formData, totalPages: Number(e.target.value) })}
+                    className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-indigo-500"
+                  />
+                </div>
+              ) : formData.mediaCategory === "film" ? (
+                <div>
+                  <label className="block text-sm text-slate-400 mb-1">Ubah Total Durasi Film (Dalam Menit)</label>
+                  <input
+                    type="number"
+                    min="1"
+                    value={formData.movieDurationMinutes || 0}
+                    onChange={(e) => setFormData({ ...formData, movieDurationMinutes: Number(e.target.value) })}
+                    className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-indigo-500"
+                  />
+                </div>
+              ) : (
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-sm text-slate-400 mb-1">Ubah Total Season</label>
+                    <input
+                      type="number"
+                      min="1"
+                      value={formData.seriesSeasons || 1}
+                      onChange={(e) => setFormData({ ...formData, seriesSeasons: Number(e.target.value) })}
+                      className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-indigo-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm text-slate-400 mb-1">Ubah Total Episode</label>
+                    <input
+                      type="number"
+                      min="1"
+                      value={formData.seriesEpisodes || 1}
+                      onChange={(e) => setFormData({ ...formData, seriesEpisodes: Number(e.target.value) })}
+                      className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-indigo-500"
+                    />
+                  </div>
+                </div>
+              )}
+
+              <div className="flex justify-end space-x-3 pt-4 border-t border-slate-700">
+                <button type="button" onClick={closeModal} className="px-4 py-2 text-slate-400 hover:text-white text-sm">
+                  Batal
+                </button>
+                <button type="submit" className="bg-amber-600 hover:bg-amber-500 text-white px-4 py-2 rounded-lg text-sm font-medium">
+                  Update Struktur
                 </button>
               </div>
             </form>
