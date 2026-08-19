@@ -47,6 +47,7 @@ const PUBLISHERS = [
   { name: "HBO", color: "bg-purple-600/20 text-purple-400 border-purple-500/30", icon: "🟣" },
   { name: "VIU", color: "bg-amber-500/20 text-amber-400 border-amber-500/30", icon: "🟡" },
   { name: "Vidio", color: "bg-rose-600/20 text-rose-400 border-rose-500/30", icon: "🔴" },
+  { name: "Lainnya", color: "bg-gray-600/20 text-gray-400 border-gray-500/30", icon: "⚪" }
 ];
 
 export default function Dashboard() {
@@ -625,11 +626,11 @@ export default function Dashboard() {
                         onChange={(e) => setFormData({ ...formData, rating: Number(e.target.value) })}
                         className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-indigo-500"
                       >
-                        <option value="5">⭐⭐⭐⭐⭐ (5 Bintang)</option>
-                        <option value="4">⭐⭐⭐⭐ (4 Bintang)</option>
-                        <option value="3">⭐⭐⭐ (3 Bintang)</option>
-                        <option value="2">⭐⭐ (2 Bintang)</option>
-                        <option value="1">⭐ (1 Bintang)</option>
+                        <option value="5">⭐⭐⭐⭐⭐ </option>
+                        <option value="4">⭐⭐⭐⭐ </option>
+                        <option value="3">⭐⭐⭐ </option>
+                        <option value="2">⭐⭐ </option>
+                        <option value="1">⭐ </option>
                       </select>
                     </div>
                   )}
