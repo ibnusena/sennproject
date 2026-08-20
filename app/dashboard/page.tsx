@@ -15,13 +15,13 @@ import {
 } from "firebase/firestore";
 import { auth, db } from "@/lib/firebase";
 import { useRouter } from "next/navigation";
-import { Book, Film, LogOut, Plus, Star, Loader2, Pencil, Trash2, X, Settings2, Image as ImageIcon, User as UserIcon } from "lucide-react";
+import { Book, Film, LogOut, Plus, Star, Loader2, Pencil, Trash2, X, Settings2, Image as ImageIcon, User as UserIcon, ListOrdered } from "lucide-react";
 
 interface MediaItem {
   id: string;
   type: "book" | "movie";
   title: string;
-  subTitle: string; // Publisher atau Penulis
+  subTitle: string;
   status: "Wishlist" | "On Going" | "Selesai";
   userId: string;
   coverUrl?: string;
@@ -37,6 +37,7 @@ interface MediaItem {
   movieProgressMinutes?: number;
   seriesSeasons?: number;
   seriesEpisodes?: number;
+  seriesEpisodesPerSeason?: number[]; // Array episode per season [12, 10, 8]
   seriesProgressEps?: number;
   rating?: number;
 }
@@ -79,7 +80,8 @@ export default function Dashboard() {
     movieDurationMinutes: 0,
     movieProgressMinutes: 0,
     seriesSeasons: 1,
-    seriesEpisodes: 1,
+    seriesEpisodes: 12,
+    seriesEpisodesPerSeason: [12],
     seriesProgressEps: 0,
     rating: 5,
   });
@@ -119,10 +121,49 @@ export default function Dashboard() {
     return `${hours}j ${minutes}m`;
   };
 
+  // Menangani perubahan jumlah season dan menyesuaikan array episode
+  const handleSeasonCountChange = (numSeasons: number) => {
+    const currentList = formData.seriesEpisodesPerSeason || [12];
+    let newList = [...currentList];
+
+    if (numSeasons > newList.length) {
+      for (let i = newList.length; i < numSeasons; i++) {
+        newList.push(12); // Default 12 episode per season baru
+      }
+    } else {
+      newList = newList.slice(0, numSeasons);
+    }
+
+    const totalEps = newList.reduce((a, b) => a + Number(b || 0), 0);
+
+    setFormData({
+      ...formData,
+      seriesSeasons: numSeasons,
+      seriesEpisodesPerSeason: newList,
+      seriesEpisodes: totalEps,
+    });
+  };
+
+  // Menangani perubahan jumlah episode pada season tertentu
+  const handleEpisodePerSeasonChange = (index: number, val: number) => {
+    const newList = [...(formData.seriesEpisodesPerSeason || [12])];
+    newList[index] = val;
+    const totalEps = newList.reduce((a, b) => a + Number(b || 0), 0);
+
+    setFormData({
+      ...formData,
+      seriesEpisodesPerSeason: newList,
+      seriesEpisodes: totalEps,
+    });
+  };
+
   const openModal = (itemToEdit?: MediaItem) => {
     if (itemToEdit) {
       setEditingItem(itemToEdit);
-      setFormData(itemToEdit);
+      setFormData({
+        ...itemToEdit,
+        seriesEpisodesPerSeason: itemToEdit.seriesEpisodesPerSeason || [itemToEdit.seriesEpisodes || 12],
+      });
     } else {
       setEditingItem(null);
       setFormData({
@@ -137,7 +178,8 @@ export default function Dashboard() {
         movieDurationMinutes: 0,
         movieProgressMinutes: 0,
         seriesSeasons: 1,
-        seriesEpisodes: 1,
+        seriesEpisodes: 12,
+        seriesEpisodesPerSeason: [12],
         seriesProgressEps: 0,
         rating: 5,
       });
@@ -147,7 +189,10 @@ export default function Dashboard() {
 
   const openMetaModal = (item: MediaItem) => {
     setEditingItem(item);
-    setFormData(item);
+    setFormData({
+      ...item,
+      seriesEpisodesPerSeason: item.seriesEpisodesPerSeason || [item.seriesEpisodes || 12],
+    });
     setIsMetaModalOpen(true);
   };
 
@@ -157,7 +202,6 @@ export default function Dashboard() {
     setEditingItem(null);
   };
 
-  // Helper jika status diubah ke Selesai -> Otomatis set 100% full
   const handleStatusChange = (newStatus: "Wishlist" | "On Going" | "Selesai") => {
     if (newStatus === "Selesai") {
       setFormData((prev) => ({
@@ -179,7 +223,6 @@ export default function Dashboard() {
     try {
       let finalData = { ...formData };
 
-      // Pastikan jika status Selesai, nilainya pasti dikunci ke nilai maksimum
       if (finalData.status === "Selesai") {
         if (activeTab === "book") {
           finalData.currentPage = finalData.totalPages || finalData.currentPage;
@@ -261,7 +304,7 @@ export default function Dashboard() {
     <div className="bg-slate-900 text-slate-100 min-h-screen font-sans pb-24 md:pb-8 p-4 md:p-8 select-none">
       <div className="max-w-6xl mx-auto">
         
-        {/* Header Bar dengan Profil Ringkas di Pojok Kanan Atas */}
+        {/* Header Bar */}
         <div className="flex justify-between items-center mb-6 relative">
           <div>
             <h2 className="text-xl md:text-2xl font-extrabold text-white tracking-tight">
@@ -270,7 +313,7 @@ export default function Dashboard() {
             <p className="text-xs md:text-sm text-slate-400">Kelola wishlist & progress harian kamu.</p>
           </div>
 
-          {/* Icon Profil Ringkas */}
+          {/* Profile Dropdown */}
           <div className="relative">
             <button
               onClick={() => setShowProfileMenu(!showProfileMenu)}
@@ -283,7 +326,6 @@ export default function Dashboard() {
               )}
             </button>
 
-            {/* Dropdown Data Akun */}
             {showProfileMenu && (
               <div className="absolute right-0 mt-2 w-64 bg-slate-800 border border-slate-700 rounded-2xl shadow-2xl p-4 z-50">
                 <div className="flex items-center space-x-3 pb-3 border-b border-slate-700/60 mb-3">
@@ -312,7 +354,7 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {/* Tab Switcher - Desktop View */}
+        {/* Tab Switcher - Desktop */}
         <div className="hidden md:flex border-b border-slate-800 mb-8 space-x-8">
           <button
             onClick={() => setActiveTab("book")}
@@ -363,7 +405,6 @@ export default function Dashboard() {
 
               return (
                 <div key={item.id} className="bg-slate-800/90 border border-slate-700/60 p-4 md:p-5 rounded-2xl flex gap-3 md:gap-4 group relative overflow-hidden shadow-md">
-                  {/* Cover Portrait */}
                   {item.coverUrl && (
                     <div className="w-20 md:w-24 h-28 md:h-36 flex-shrink-0 rounded-xl overflow-hidden bg-slate-900 border border-slate-700">
                       <img src={item.coverUrl} alt={item.title} className="w-full h-full object-cover" />
@@ -372,7 +413,6 @@ export default function Dashboard() {
 
                   <div className="flex-1 flex flex-col justify-between">
                     <div>
-                      {/* Badge Status & Publisher */}
                       <div className="flex justify-between items-center mb-1.5 gap-1 flex-wrap">
                         <span className={`text-[10px] md:text-[11px] px-2 py-0.5 rounded-full font-medium border ${
                           item.status === "Selesai" 
@@ -419,7 +459,7 @@ export default function Dashboard() {
                         </p>
                       </div>
 
-                      {/* Rating (Selesai Only) */}
+                      {/* Rating */}
                       {item.type === "movie" && item.status === "Selesai" && item.rating && (
                         <div className="flex items-center space-x-0.5 mb-1">
                           {Array.from({ length: 5 }).map((_, i) => (
@@ -444,7 +484,7 @@ export default function Dashboard() {
                       <button
                         onClick={() => openMetaModal(item)}
                         className="p-1.5 text-slate-400 hover:text-amber-400 active:bg-slate-700 rounded transition"
-                        title="Edit Struktur"
+                        title="Edit Struktur Total"
                       >
                         <Settings2 className="w-3.5 h-3.5" />
                       </button>
@@ -471,7 +511,7 @@ export default function Dashboard() {
         )}
       </div>
 
-      {/* FLOATING ACTION BUTTON (FAB) - MOBILE */}
+      {/* FAB - MOBILE */}
       <button
         onClick={() => openModal()}
         className={`md:hidden fixed bottom-20 right-5 z-40 p-4 rounded-full text-white shadow-2xl transition active:scale-95 ${
@@ -588,25 +628,23 @@ export default function Dashboard() {
                       <input
                         type="number"
                         min="0"
-                        value={formData.currentPage || 0}
+                        value={formData.currentPage ?? 0}
                         onChange={(e) => setFormData({ ...formData, currentPage: Number(e.target.value) })}
                         className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white text-sm focus:outline-none focus:border-indigo-500"
                       />
                     </div>
                   )}
 
-                  {!editingItem && (
-                    <div>
-                      <label className="block text-xs text-slate-400 mb-1">Total Halaman Awal</label>
-                      <input
-                        type="number"
-                        min="1"
-                        value={formData.totalPages || 0}
-                        onChange={(e) => setFormData({ ...formData, totalPages: Number(e.target.value) })}
-                        className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white text-sm focus:outline-none focus:border-indigo-500"
-                      />
-                    </div>
-                  )}
+                  <div>
+                    <label className="block text-xs text-slate-400 mb-1">Total Halaman Buku</label>
+                    <input
+                      type="number"
+                      min="1"
+                      value={formData.totalPages ?? 0}
+                      onChange={(e) => setFormData({ ...formData, totalPages: Number(e.target.value) })}
+                      className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white text-sm focus:outline-none focus:border-indigo-500"
+                    />
+                  </div>
 
                   <div>
                     <label className="block text-xs text-slate-400 mb-1">Kesan & Pesan</label>
@@ -644,18 +682,18 @@ export default function Dashboard() {
                         <input
                           type="number"
                           min="0"
-                          value={formData.movieProgressMinutes || 0}
+                          value={formData.movieProgressMinutes ?? 0}
                           onChange={(e) => setFormData({ ...formData, movieProgressMinutes: Number(e.target.value) })}
                           className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white text-sm focus:outline-none focus:border-indigo-500"
                         />
                       </div>
                     ) : (
                       <div>
-                        <label className="block text-xs text-slate-400 mb-1">Episode yang Ditonton</label>
+                        <label className="block text-xs text-slate-400 mb-1">Episode yang Ditonton (Total Accumulative)</label>
                         <input
                           type="number"
                           min="0"
-                          value={formData.seriesProgressEps || 0}
+                          value={formData.seriesProgressEps ?? 0}
                           onChange={(e) => setFormData({ ...formData, seriesProgressEps: Number(e.target.value) })}
                           className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white text-sm focus:outline-none focus:border-indigo-500"
                         />
@@ -663,45 +701,57 @@ export default function Dashboard() {
                     )
                   )}
 
-                  {!editingItem && (
-                    formData.mediaCategory === "film" ? (
+                  {formData.mediaCategory === "film" ? (
+                    <div>
+                      <label className="block text-xs text-slate-400 mb-1">Durasi Total (Menit)</label>
+                      <input
+                        type="number"
+                        min="1"
+                        value={formData.movieDurationMinutes ?? 0}
+                        onChange={(e) => setFormData({ ...formData, movieDurationMinutes: Number(e.target.value) })}
+                        className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white text-sm focus:outline-none focus:border-indigo-500"
+                      />
+                    </div>
+                  ) : (
+                    <div className="space-y-3 bg-slate-900/60 p-3 rounded-2xl border border-slate-700/50">
                       <div>
-                        <label className="block text-xs text-slate-400 mb-1">Durasi Total (Menit)</label>
+                        <label className="block text-xs text-slate-400 mb-1">Jumlah Season</label>
                         <input
                           type="number"
                           min="1"
-                          value={formData.movieDurationMinutes || 0}
-                          onChange={(e) => setFormData({ ...formData, movieDurationMinutes: Number(e.target.value) })}
+                          max="20"
+                          value={formData.seriesSeasons || 1}
+                          onChange={(e) => handleSeasonCountChange(Math.max(1, Number(e.target.value)))}
                           className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white text-sm focus:outline-none focus:border-indigo-500"
                         />
                       </div>
-                    ) : (
-                      <div className="grid grid-cols-2 gap-3">
-                        <div>
-                          <label className="block text-xs text-slate-400 mb-1">Total Season</label>
-                          <input
-                            type="number"
-                            min="1"
-                            value={formData.seriesSeasons || 1}
-                            onChange={(e) => setFormData({ ...formData, seriesSeasons: Number(e.target.value) })}
-                            className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white text-sm focus:outline-none focus:border-indigo-500"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-xs text-slate-400 mb-1">Total Episode</label>
-                          <input
-                            type="number"
-                            min="1"
-                            value={formData.seriesEpisodes || 1}
-                            onChange={(e) => setFormData({ ...formData, seriesEpisodes: Number(e.target.value) })}
-                            className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white text-sm focus:outline-none focus:border-indigo-500"
-                          />
+
+                      {/* Input Rincian Episode per Season */}
+                      <div className="space-y-2 pt-2 border-t border-slate-800">
+                        <label className="block text-xs font-semibold text-slate-300">Rincian Episode Tiap Season:</label>
+                        <div className="grid grid-cols-2 gap-2 max-h-40 overflow-y-auto pr-1">
+                          {Array.from({ length: formData.seriesSeasons || 1 }).map((_, idx) => (
+                            <div key={idx} className="flex items-center space-x-2 bg-slate-800 p-2 rounded-xl border border-slate-700/60">
+                              <span className="text-xs text-slate-400 w-12 font-medium">S{idx + 1}:</span>
+                              <input
+                                type="number"
+                                min="1"
+                                value={formData.seriesEpisodesPerSeason?.[idx] ?? 12}
+                                onChange={(e) => handleEpisodePerSeasonChange(idx, Number(e.target.value))}
+                                className="w-full bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 text-white text-xs focus:outline-none focus:border-indigo-500 text-center"
+                              />
+                            </div>
+                          ))}
                         </div>
                       </div>
-                    )
+
+                      <div className="flex justify-between items-center text-xs text-pink-400 pt-2 border-t border-slate-800 font-bold">
+                        <span>Total Semua Episode:</span>
+                        <span>{formData.seriesEpisodes || 0} Episode</span>
+                      </div>
+                    </div>
                   )}
 
-                  {/* Rating Bintang tanpa kata "Bintang" */}
                   {formData.status === "Selesai" && (
                     <div>
                       <label className="block text-xs text-slate-400 mb-1">Rating</label>
@@ -710,11 +760,11 @@ export default function Dashboard() {
                         onChange={(e) => setFormData({ ...formData, rating: Number(e.target.value) })}
                         className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white text-sm focus:outline-none focus:border-indigo-500"
                       >
-                        <option value="5">⭐⭐⭐⭐⭐ </option>
-                        <option value="4">⭐⭐⭐⭐ </option>
-                        <option value="3">⭐⭐⭐ </option>
-                        <option value="2">⭐⭐ </option>
-                        <option value="1">⭐ </option>
+                        <option value="5">⭐⭐⭐⭐⭐ (5)</option>
+                        <option value="4">⭐⭐⭐⭐ (4)</option>
+                        <option value="3">⭐⭐⭐ (3)</option>
+                        <option value="2">⭐⭐ (2)</option>
+                        <option value="1">⭐ (1)</option>
                       </select>
                     </div>
                   )}
@@ -734,7 +784,7 @@ export default function Dashboard() {
         </div>
       )}
 
-      {/* MODAL EDIT META */}
+      {/* MODAL EDIT META (PENGATURAN STRUKTUR TOTAL) */}
       {isMetaModalOpen && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4 z-50">
           <div className="bg-slate-800 border-t sm:border border-slate-700 rounded-t-3xl sm:rounded-2xl max-w-md w-full p-6 relative">
@@ -743,7 +793,7 @@ export default function Dashboard() {
             </button>
 
             <h3 className="text-base sm:text-lg font-bold text-white mb-4 flex items-center gap-2">
-              <Settings2 className="w-5 h-5 text-amber-400" /> Edit Pengaturan Struktur
+              <Settings2 className="w-5 h-5 text-amber-400" /> Edit Pengaturan Total
             </h3>
 
             <form onSubmit={handleSubmit} className="space-y-4">
@@ -753,7 +803,7 @@ export default function Dashboard() {
                   <input
                     type="number"
                     min="1"
-                    value={formData.totalPages || 0}
+                    value={formData.totalPages ?? 0}
                     onChange={(e) => setFormData({ ...formData, totalPages: Number(e.target.value) })}
                     className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white text-sm focus:outline-none focus:border-indigo-500"
                   />
@@ -764,32 +814,46 @@ export default function Dashboard() {
                   <input
                     type="number"
                     min="1"
-                    value={formData.movieDurationMinutes || 0}
+                    value={formData.movieDurationMinutes ?? 0}
                     onChange={(e) => setFormData({ ...formData, movieDurationMinutes: Number(e.target.value) })}
                     className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white text-sm focus:outline-none focus:border-indigo-500"
                   />
                 </div>
               ) : (
-                <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-3 bg-slate-900/60 p-3 rounded-2xl border border-slate-700/50">
                   <div>
-                    <label className="block text-xs text-slate-400 mb-1">Total Season</label>
+                    <label className="block text-xs text-slate-400 mb-1">Jumlah Season</label>
                     <input
                       type="number"
                       min="1"
+                      max="20"
                       value={formData.seriesSeasons || 1}
-                      onChange={(e) => setFormData({ ...formData, seriesSeasons: Number(e.target.value) })}
+                      onChange={(e) => handleSeasonCountChange(Math.max(1, Number(e.target.value)))}
                       className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white text-sm focus:outline-none focus:border-indigo-500"
                     />
                   </div>
-                  <div>
-                    <label className="block text-xs text-slate-400 mb-1">Total Episode</label>
-                    <input
-                      type="number"
-                      min="1"
-                      value={formData.seriesEpisodes || 1}
-                      onChange={(e) => setFormData({ ...formData, seriesEpisodes: Number(e.target.value) })}
-                      className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white text-sm focus:outline-none focus:border-indigo-500"
-                    />
+
+                  <div className="space-y-2 pt-2 border-t border-slate-800">
+                    <label className="block text-xs font-semibold text-slate-300">Rincian Episode Tiap Season:</label>
+                    <div className="grid grid-cols-2 gap-2 max-h-40 overflow-y-auto pr-1">
+                      {Array.from({ length: formData.seriesSeasons || 1 }).map((_, idx) => (
+                        <div key={idx} className="flex items-center space-x-2 bg-slate-800 p-2 rounded-xl border border-slate-700/60">
+                          <span className="text-xs text-slate-400 w-12 font-medium">S{idx + 1}:</span>
+                          <input
+                            type="number"
+                            min="1"
+                            value={formData.seriesEpisodesPerSeason?.[idx] ?? 12}
+                            onChange={(e) => handleEpisodePerSeasonChange(idx, Number(e.target.value))}
+                            className="w-full bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 text-white text-xs focus:outline-none focus:border-indigo-500 text-center"
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="flex justify-between items-center text-xs text-amber-400 pt-2 border-t border-slate-800 font-bold">
+                    <span>Total Semua Episode:</span>
+                    <span>{formData.seriesEpisodes || 0} Episode</span>
                   </div>
                 </div>
               )}
