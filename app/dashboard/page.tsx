@@ -15,7 +15,7 @@ import {
 } from "firebase/firestore";
 import { auth, db } from "@/lib/firebase";
 import { useRouter } from "next/navigation";
-import { Book, Film, LogOut, Plus, Star, Loader2, Pencil, Trash2, X, Settings2, Image as ImageIcon, User as UserIcon, ListOrdered } from "lucide-react";
+import { Book, Film, LogOut, Plus, Star, Loader2, Pencil, Trash2, X, Settings2, Image as ImageIcon, User as UserIcon, HelpCircle } from "lucide-react";
 
 interface MediaItem {
   id: string;
@@ -37,7 +37,8 @@ interface MediaItem {
   movieProgressMinutes?: number;
   seriesSeasons?: number;
   seriesEpisodes?: number;
-  seriesEpisodesPerSeason?: number[]; // Array episode per season [12, 10, 8]
+  seriesEpisodesPerSeason?: number[];
+  seriesIsOngoingSeason?: boolean[]; // Array penanda apakah season x episodenya belum pasti
   seriesProgressEps?: number;
   rating?: number;
 }
@@ -48,6 +49,7 @@ const PUBLISHERS = [
   { name: "HBO", color: "bg-purple-600/20 text-purple-400 border-purple-500/30", icon: "🟣" },
   { name: "VIU", color: "bg-amber-500/20 text-amber-400 border-amber-500/30", icon: "🟡" },
   { name: "Vidio", color: "bg-rose-600/20 text-rose-400 border-rose-500/30", icon: "🔴" },
+  { name: "Lainnya", color: "bg-gray-600/20 text-gray-400 border-gray-500/30", icon: "⚪" },
 ];
 
 export default function Dashboard() {
@@ -82,6 +84,7 @@ export default function Dashboard() {
     seriesSeasons: 1,
     seriesEpisodes: 12,
     seriesEpisodesPerSeason: [12],
+    seriesIsOngoingSeason: [false],
     seriesProgressEps: 0,
     rating: 5,
   });
@@ -121,17 +124,22 @@ export default function Dashboard() {
     return `${hours}j ${minutes}m`;
   };
 
-  // Menangani perubahan jumlah season dan menyesuaikan array episode
+  // Menangani perubahan jumlah season
   const handleSeasonCountChange = (numSeasons: number) => {
     const currentList = formData.seriesEpisodesPerSeason || [12];
+    const currentOngoing = formData.seriesIsOngoingSeason || [false];
+
     let newList = [...currentList];
+    let newOngoing = [...currentOngoing];
 
     if (numSeasons > newList.length) {
       for (let i = newList.length; i < numSeasons; i++) {
-        newList.push(12); // Default 12 episode per season baru
+        newList.push(12);
+        newOngoing.push(false);
       }
     } else {
       newList = newList.slice(0, numSeasons);
+      newOngoing = newOngoing.slice(0, numSeasons);
     }
 
     const totalEps = newList.reduce((a, b) => a + Number(b || 0), 0);
@@ -140,11 +148,12 @@ export default function Dashboard() {
       ...formData,
       seriesSeasons: numSeasons,
       seriesEpisodesPerSeason: newList,
+      seriesIsOngoingSeason: newOngoing,
       seriesEpisodes: totalEps,
     });
   };
 
-  // Menangani perubahan jumlah episode pada season tertentu
+  // Menangani perubahan jumlah episode per season
   const handleEpisodePerSeasonChange = (index: number, val: number) => {
     const newList = [...(formData.seriesEpisodesPerSeason || [12])];
     newList[index] = val;
@@ -157,12 +166,24 @@ export default function Dashboard() {
     });
   };
 
+  // Toggle status episode belum pasti / ongoing per season
+  const handleToggleOngoingSeason = (index: number) => {
+    const newOngoing = [...(formData.seriesIsOngoingSeason || [false])];
+    newOngoing[index] = !newOngoing[index];
+
+    setFormData({
+      ...formData,
+      seriesIsOngoingSeason: newOngoing,
+    });
+  };
+
   const openModal = (itemToEdit?: MediaItem) => {
     if (itemToEdit) {
       setEditingItem(itemToEdit);
       setFormData({
         ...itemToEdit,
         seriesEpisodesPerSeason: itemToEdit.seriesEpisodesPerSeason || [itemToEdit.seriesEpisodes || 12],
+        seriesIsOngoingSeason: itemToEdit.seriesIsOngoingSeason || [false],
       });
     } else {
       setEditingItem(null);
@@ -180,6 +201,7 @@ export default function Dashboard() {
         seriesSeasons: 1,
         seriesEpisodes: 12,
         seriesEpisodesPerSeason: [12],
+        seriesIsOngoingSeason: [false],
         seriesProgressEps: 0,
         rating: 5,
       });
@@ -192,6 +214,7 @@ export default function Dashboard() {
     setFormData({
       ...item,
       seriesEpisodesPerSeason: item.seriesEpisodesPerSeason || [item.seriesEpisodes || 12],
+      seriesIsOngoingSeason: item.seriesIsOngoingSeason || [false],
     });
     setIsMetaModalOpen(true);
   };
@@ -282,7 +305,10 @@ export default function Dashboard() {
         return Math.min(100, Math.round(((item.movieProgressMinutes || 0) / item.movieDurationMinutes) * 100));
       } else {
         if (!item.seriesEpisodes || item.seriesEpisodes === 0) return 0;
-        return Math.min(100, Math.round(((item.seriesProgressEps || 0) / item.seriesEpisodes) * 100));
+
+        // Jika episode saat ini lebih tinggi dari total estimasi episode (misal episodenya nambah terus)
+        const targetEpisodes = Math.max(item.seriesEpisodes, item.seriesProgressEps || 0);
+        return Math.min(100, Math.round(((item.seriesProgressEps || 0) / targetEpisodes) * 100));
       }
     }
   };
@@ -402,6 +428,7 @@ export default function Dashboard() {
             {filteredItems.map((item) => {
               const progress = calculateProgress(item);
               const pubInfo = PUBLISHERS.find((p) => p.name === item.subTitle);
+              const hasOngoingSeason = item.seriesIsOngoingSeason?.some((v) => v === true);
 
               return (
                 <div key={item.id} className="bg-slate-800/90 border border-slate-700/60 p-4 md:p-5 rounded-2xl flex gap-3 md:gap-4 group relative overflow-hidden shadow-md">
@@ -454,7 +481,7 @@ export default function Dashboard() {
                           ) : item.mediaCategory === "film" ? (
                             `${formatTime(item.status === "Selesai" ? item.movieDurationMinutes : item.movieProgressMinutes)} / ${formatTime(item.movieDurationMinutes)}`
                           ) : (
-                            `${item.status === "Selesai" ? item.seriesEpisodes : item.seriesProgressEps || 0} / ${item.seriesEpisodes || 0} eps (${item.seriesSeasons || 1} Season)`
+                            `${item.status === "Selesai" ? item.seriesEpisodes : item.seriesProgressEps || 0} / ${item.seriesEpisodes || 0}${hasOngoingSeason ? '+' : ''} eps (${item.seriesSeasons || 1} Season)`
                           )}
                         </p>
                       </div>
@@ -689,7 +716,7 @@ export default function Dashboard() {
                       </div>
                     ) : (
                       <div>
-                        <label className="block text-xs text-slate-400 mb-1">Episode yang Ditonton (Total Accumulative)</label>
+                        <label className="block text-xs text-slate-400 mb-1">Episode Ditonton (Total Seluruh Season)</label>
                         <input
                           type="number"
                           min="0"
@@ -726,19 +753,33 @@ export default function Dashboard() {
                         />
                       </div>
 
-                      {/* Input Rincian Episode per Season */}
+                      {/* Rincian Episode */}
                       <div className="space-y-2 pt-2 border-t border-slate-800">
                         <label className="block text-xs font-semibold text-slate-300">Rincian Episode Tiap Season:</label>
-                        <div className="grid grid-cols-2 gap-2 max-h-40 overflow-y-auto pr-1">
+                        <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
                           {Array.from({ length: formData.seriesSeasons || 1 }).map((_, idx) => (
-                            <div key={idx} className="flex items-center space-x-2 bg-slate-800 p-2 rounded-xl border border-slate-700/60">
-                              <span className="text-xs text-slate-400 w-12 font-medium">S{idx + 1}:</span>
+                            <div key={idx} className="bg-slate-800 p-2 rounded-xl border border-slate-700/60 space-y-1">
+                              <div className="flex items-center justify-between">
+                                <span className="text-xs text-slate-300 font-bold">Season {idx + 1}</span>
+                                <label className="flex items-center space-x-1.5 text-[10px] text-amber-400 cursor-pointer">
+                                  <input
+                                    type="checkbox"
+                                    checked={formData.seriesIsOngoingSeason?.[idx] || false}
+                                    onChange={() => handleToggleOngoingSeason(idx)}
+                                    className="rounded border-slate-700 bg-slate-900 text-pink-500 focus:ring-0"
+                                  />
+                                  <span>Masih Tayang / Belum Pasti</span>
+                                </label>
+                              </div>
+
                               <input
                                 type="number"
                                 min="1"
+                                disabled={formData.seriesIsOngoingSeason?.[idx]}
                                 value={formData.seriesEpisodesPerSeason?.[idx] ?? 12}
                                 onChange={(e) => handleEpisodePerSeasonChange(idx, Number(e.target.value))}
-                                className="w-full bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 text-white text-xs focus:outline-none focus:border-indigo-500 text-center"
+                                className="w-full bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 text-white text-xs focus:outline-none focus:border-indigo-500 disabled:opacity-50"
+                                placeholder={formData.seriesIsOngoingSeason?.[idx] ? "Episode belum pasti" : "Jumlah episode"}
                               />
                             </div>
                           ))}
@@ -746,8 +787,11 @@ export default function Dashboard() {
                       </div>
 
                       <div className="flex justify-between items-center text-xs text-pink-400 pt-2 border-t border-slate-800 font-bold">
-                        <span>Total Semua Episode:</span>
-                        <span>{formData.seriesEpisodes || 0} Episode</span>
+                        <span>Estimasi Total Episode:</span>
+                        <span>
+                          {formData.seriesEpisodes || 0}
+                          {formData.seriesIsOngoingSeason?.some(Boolean) ? "+" : ""} Episode
+                        </span>
                       </div>
                     </div>
                   )}
@@ -835,16 +879,30 @@ export default function Dashboard() {
 
                   <div className="space-y-2 pt-2 border-t border-slate-800">
                     <label className="block text-xs font-semibold text-slate-300">Rincian Episode Tiap Season:</label>
-                    <div className="grid grid-cols-2 gap-2 max-h-40 overflow-y-auto pr-1">
+                    <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
                       {Array.from({ length: formData.seriesSeasons || 1 }).map((_, idx) => (
-                        <div key={idx} className="flex items-center space-x-2 bg-slate-800 p-2 rounded-xl border border-slate-700/60">
-                          <span className="text-xs text-slate-400 w-12 font-medium">S{idx + 1}:</span>
+                        <div key={idx} className="bg-slate-800 p-2 rounded-xl border border-slate-700/60 space-y-1">
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs text-slate-300 font-bold">Season {idx + 1}</span>
+                            <label className="flex items-center space-x-1.5 text-[10px] text-amber-400 cursor-pointer">
+                              <input
+                                type="checkbox"
+                                checked={formData.seriesIsOngoingSeason?.[idx] || false}
+                                onChange={() => handleToggleOngoingSeason(idx)}
+                                className="rounded border-slate-700 bg-slate-900 text-pink-500 focus:ring-0"
+                              />
+                              <span>Masih Tayang / Belum Pasti</span>
+                            </label>
+                          </div>
+
                           <input
                             type="number"
                             min="1"
+                            disabled={formData.seriesIsOngoingSeason?.[idx]}
                             value={formData.seriesEpisodesPerSeason?.[idx] ?? 12}
                             onChange={(e) => handleEpisodePerSeasonChange(idx, Number(e.target.value))}
-                            className="w-full bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 text-white text-xs focus:outline-none focus:border-indigo-500 text-center"
+                            className="w-full bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 text-white text-xs focus:outline-none focus:border-indigo-500 disabled:opacity-50"
+                            placeholder={formData.seriesIsOngoingSeason?.[idx] ? "Episode belum pasti" : "Jumlah episode"}
                           />
                         </div>
                       ))}
@@ -852,8 +910,11 @@ export default function Dashboard() {
                   </div>
 
                   <div className="flex justify-between items-center text-xs text-amber-400 pt-2 border-t border-slate-800 font-bold">
-                    <span>Total Semua Episode:</span>
-                    <span>{formData.seriesEpisodes || 0} Episode</span>
+                    <span>Estimasi Total Episode:</span>
+                    <span>
+                      {formData.seriesEpisodes || 0}
+                      {formData.seriesIsOngoingSeason?.some(Boolean) ? "+" : ""} Episode
+                    </span>
                   </div>
                 </div>
               )}
