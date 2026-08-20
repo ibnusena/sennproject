@@ -15,18 +15,42 @@ import {
 } from "firebase/firestore";
 import { auth, db } from "@/lib/firebase";
 import { useRouter } from "next/navigation";
-import { Book, Film, LogOut, Plus, Star, Loader2, Pencil, Trash2, X, Settings2, Image as ImageIcon, User as UserIcon, HelpCircle } from "lucide-react";
+import { 
+  Book, 
+  Film, 
+  LogOut, 
+  Plus, 
+  Star, 
+  Loader2, 
+  Pencil, 
+  Trash2, 
+  X, 
+  Settings2, 
+  Image as ImageIcon, 
+  User as UserIcon, 
+  Filter
+} from "lucide-react";
+
+interface SeasonDetail {
+  seasonNumber: number;
+  episodesCount: number;
+  episodesWatched: number;
+  status: "Wishlist" | "On Going" | "Selesai";
+  rating?: number;
+  isOngoing: boolean;
+}
 
 interface MediaItem {
   id: string;
   type: "book" | "movie";
   title: string;
-  subTitle: string;
+  subTitle: string; // Penulis (Buku) / Publisher (Movie)
   status: "Wishlist" | "On Going" | "Selesai";
   userId: string;
   coverUrl?: string;
 
   // Custom Fields Buku
+  bookCategory?: string;
   currentPage?: number;
   totalPages?: number;
   kesanPesan?: string;
@@ -35,10 +59,13 @@ interface MediaItem {
   mediaCategory?: "film" | "series";
   movieDurationMinutes?: number;
   movieProgressMinutes?: number;
+
+  // Custom Fields Series Per-Season
+  seriesSeasonsDetails?: SeasonDetail[];
+
+  // Field legacy/agregat untuk kalkulasi ringkas
   seriesSeasons?: number;
   seriesEpisodes?: number;
-  seriesEpisodesPerSeason?: number[];
-  seriesIsOngoingSeason?: boolean[]; // Array penanda apakah season x episodenya belum pasti
   seriesProgressEps?: number;
   rating?: number;
 }
@@ -49,7 +76,18 @@ const PUBLISHERS = [
   { name: "HBO", color: "bg-purple-600/20 text-purple-400 border-purple-500/30", icon: "🟣" },
   { name: "VIU", color: "bg-amber-500/20 text-amber-400 border-amber-500/30", icon: "🟡" },
   { name: "Vidio", color: "bg-rose-600/20 text-rose-400 border-rose-500/30", icon: "🔴" },
-  { name: "Lainnya", color: "bg-gray-600/20 text-gray-400 border-gray-500/30", icon: "⚪" },
+];
+
+const BOOK_CATEGORIES = [
+  "Fiksi / Novel",
+  "Non-Fiksi / Self-Help",
+  "Komik / Manga / Manhwa",
+  "Biografi / Otobiografi",
+  "Sains & Teknologi",
+  "Bisnis & Keuangan",
+  "Pelajaran / Akademik",
+  "Agama & Spiritual",
+  "Lainnya",
 ];
 
 export default function Dashboard() {
@@ -59,15 +97,22 @@ export default function Dashboard() {
   const [activeTab, setActiveTab] = useState<"book" | "movie">("book");
   const [items, setItems] = useState<MediaItem[]>([]);
 
-  // State Dropdown Profile
+  // State Filter Status
+  const [statusFilter, setStatusFilter] = useState<"Semua" | "Wishlist" | "On Going" | "Selesai">("Semua");
+
+  // Dropdown Profile
   const [showProfileMenu, setShowProfileMenu] = useState(false);
 
-  // State Modal Utama
+  // Modals
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isMetaModalOpen, setIsMetaModalOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<MediaItem | null>(null);
 
-  // State Modal Khusus Edit Meta
-  const [isMetaModalOpen, setIsMetaModalOpen] = useState(false);
+  // Helper State Durasi Movie
+  const [movieTotalHours, setMovieTotalHours] = useState(0);
+  const [movieTotalMins, setMovieTotalMins] = useState(0);
+  const [movieProgHours, setMovieProgHours] = useState(0);
+  const [movieProgMins, setMovieProgMins] = useState(0);
 
   // Form State
   const [formData, setFormData] = useState<Partial<MediaItem>>({
@@ -75,17 +120,16 @@ export default function Dashboard() {
     subTitle: "Netflix",
     status: "Wishlist",
     coverUrl: "",
+    bookCategory: "Fiksi / Novel",
     currentPage: 0,
     totalPages: 0,
     kesanPesan: "",
     mediaCategory: "film",
     movieDurationMinutes: 0,
     movieProgressMinutes: 0,
-    seriesSeasons: 1,
-    seriesEpisodes: 12,
-    seriesEpisodesPerSeason: [12],
-    seriesIsOngoingSeason: [false],
-    seriesProgressEps: 0,
+    seriesSeasonsDetails: [
+      { seasonNumber: 1, episodesCount: 12, episodesWatched: 0, status: "Wishlist", rating: 5, isOngoing: false }
+    ],
     rating: 5,
   });
 
@@ -124,67 +168,105 @@ export default function Dashboard() {
     return `${hours}j ${minutes}m`;
   };
 
-  // Menangani perubahan jumlah season
-  const handleSeasonCountChange = (numSeasons: number) => {
-    const currentList = formData.seriesEpisodesPerSeason || [12];
-    const currentOngoing = formData.seriesIsOngoingSeason || [false];
+  // Hitung total statistik item yang sudah SELESAI
+  const completedBooksCount = items.filter((i) => i.type === "book" && i.status === "Selesai").length;
+  const completedMoviesCount = items.filter((i) => i.type === "movie" && i.mediaCategory === "film" && i.status === "Selesai").length;
+  const completedSeriesCount = items.filter((i) => i.type === "movie" && i.mediaCategory === "series" && i.status === "Selesai").length;
 
-    let newList = [...currentList];
-    let newOngoing = [...currentOngoing];
+  // Menangani Perubahan Jumlah Season
+  const handleSeasonCountChange = (count: number) => {
+    const current = formData.seriesSeasonsDetails || [];
+    let updated: SeasonDetail[] = [...current];
 
-    if (numSeasons > newList.length) {
-      for (let i = newList.length; i < numSeasons; i++) {
-        newList.push(12);
-        newOngoing.push(false);
+    if (count > current.length) {
+      for (let i = current.length; i < count; i++) {
+        updated.push({
+          seasonNumber: i + 1,
+          episodesCount: 12,
+          episodesWatched: 0,
+          status: "Wishlist",
+          rating: 5,
+          isOngoing: false,
+        });
       }
     } else {
-      newList = newList.slice(0, numSeasons);
-      newOngoing = newOngoing.slice(0, numSeasons);
+      updated = updated.slice(0, count);
     }
 
-    const totalEps = newList.reduce((a, b) => a + Number(b || 0), 0);
+    // Pastikan HANYA season terakhir yang bisa berstatus isOngoing
+    updated = updated.map((s, idx) => ({
+      ...s,
+      isOngoing: idx === updated.length - 1 ? s.isOngoing : false,
+    }));
 
-    setFormData({
-      ...formData,
-      seriesSeasons: numSeasons,
-      seriesEpisodesPerSeason: newList,
-      seriesIsOngoingSeason: newOngoing,
-      seriesEpisodes: totalEps,
-    });
+    setFormData({ ...formData, seriesSeasonsDetails: updated });
   };
 
-  // Menangani perubahan jumlah episode per season
-  const handleEpisodePerSeasonChange = (index: number, val: number) => {
-    const newList = [...(formData.seriesEpisodesPerSeason || [12])];
-    newList[index] = val;
-    const totalEps = newList.reduce((a, b) => a + Number(b || 0), 0);
+  // Helper Update Detail Season Spesifik
+  const updateSeasonDetail = (index: number, key: keyof SeasonDetail, val: any) => {
+    const details = [...(formData.seriesSeasonsDetails || [])];
+    if (!details[index]) return;
 
-    setFormData({
-      ...formData,
-      seriesEpisodesPerSeason: newList,
-      seriesEpisodes: totalEps,
-    });
+    details[index] = { ...details[index], [key]: val };
+
+    // Jika episode tayang dicentang/disesuaikan pada season yang ongoing
+    if (key === "episodesWatched" && details[index].isOngoing) {
+      if (details[index].episodesWatched > details[index].episodesCount) {
+        details[index].episodesCount = details[index].episodesWatched;
+      }
+    }
+
+    // Bila status season diubah ke Selesai
+    if (key === "status" && val === "Selesai") {
+      details[index].episodesWatched = details[index].episodesCount;
+    }
+
+    setFormData({ ...formData, seriesSeasonsDetails: details });
   };
 
-  // Toggle status episode belum pasti / ongoing per season
-  const handleToggleOngoingSeason = (index: number) => {
-    const newOngoing = [...(formData.seriesIsOngoingSeason || [false])];
-    newOngoing[index] = !newOngoing[index];
+  const toggleOngoingSeason = (index: number) => {
+    const details = [...(formData.seriesSeasonsDetails || [])];
+    // Pastikan hanya season terakhir yang bisa toggle
+    if (index !== details.length - 1) return;
 
-    setFormData({
-      ...formData,
-      seriesIsOngoingSeason: newOngoing,
-    });
+    const newOngoing = !details[index].isOngoing;
+    details[index].isOngoing = newOngoing;
+
+    if (newOngoing && details[index].episodesWatched > details[index].episodesCount) {
+      details[index].episodesCount = details[index].episodesWatched;
+    }
+
+    setFormData({ ...formData, seriesSeasonsDetails: details });
   };
 
   const openModal = (itemToEdit?: MediaItem) => {
     if (itemToEdit) {
       setEditingItem(itemToEdit);
+      
+      const defaultSeasons: SeasonDetail[] = itemToEdit.seriesSeasonsDetails || [
+        {
+          seasonNumber: 1,
+          episodesCount: itemToEdit.seriesEpisodes || 12,
+          episodesWatched: itemToEdit.seriesProgressEps || 0,
+          status: itemToEdit.status || "Wishlist",
+          rating: itemToEdit.rating || 5,
+          isOngoing: false,
+        }
+      ];
+
       setFormData({
         ...itemToEdit,
-        seriesEpisodesPerSeason: itemToEdit.seriesEpisodesPerSeason || [itemToEdit.seriesEpisodes || 12],
-        seriesIsOngoingSeason: itemToEdit.seriesIsOngoingSeason || [false],
+        bookCategory: itemToEdit.bookCategory || "Fiksi / Novel",
+        seriesSeasonsDetails: defaultSeasons,
       });
+
+      const totalMin = itemToEdit.movieDurationMinutes || 0;
+      setMovieTotalHours(Math.floor(totalMin / 60));
+      setMovieTotalMins(totalMin % 60);
+
+      const progMin = itemToEdit.movieProgressMinutes || 0;
+      setMovieProgHours(Math.floor(progMin / 60));
+      setMovieProgMins(progMin % 60);
     } else {
       setEditingItem(null);
       setFormData({
@@ -192,19 +274,23 @@ export default function Dashboard() {
         subTitle: activeTab === "book" ? "" : "Netflix",
         status: "Wishlist",
         coverUrl: "",
+        bookCategory: "Fiksi / Novel",
         currentPage: 0,
         totalPages: 0,
         kesanPesan: "",
         mediaCategory: "film",
         movieDurationMinutes: 0,
         movieProgressMinutes: 0,
-        seriesSeasons: 1,
-        seriesEpisodes: 12,
-        seriesEpisodesPerSeason: [12],
-        seriesIsOngoingSeason: [false],
-        seriesProgressEps: 0,
+        seriesSeasonsDetails: [
+          { seasonNumber: 1, episodesCount: 12, episodesWatched: 0, status: "Wishlist", rating: 5, isOngoing: false }
+        ],
         rating: 5,
       });
+
+      setMovieTotalHours(0);
+      setMovieTotalMins(0);
+      setMovieProgHours(0);
+      setMovieProgMins(0);
     }
     setIsModalOpen(true);
   };
@@ -213,9 +299,16 @@ export default function Dashboard() {
     setEditingItem(item);
     setFormData({
       ...item,
-      seriesEpisodesPerSeason: item.seriesEpisodesPerSeason || [item.seriesEpisodes || 12],
-      seriesIsOngoingSeason: item.seriesIsOngoingSeason || [false],
+      bookCategory: item.bookCategory || "Fiksi / Novel",
+      seriesSeasonsDetails: item.seriesSeasonsDetails || [
+        { seasonNumber: 1, episodesCount: 12, episodesWatched: 0, status: item.status || "Wishlist", rating: 5, isOngoing: false }
+      ],
     });
+
+    const totalMin = item.movieDurationMinutes || 0;
+    setMovieTotalHours(Math.floor(totalMin / 60));
+    setMovieTotalMins(totalMin % 60);
+
     setIsMetaModalOpen(true);
   };
 
@@ -225,14 +318,18 @@ export default function Dashboard() {
     setEditingItem(null);
   };
 
-  const handleStatusChange = (newStatus: "Wishlist" | "On Going" | "Selesai") => {
+  const handleGlobalStatusChange = (newStatus: "Wishlist" | "On Going" | "Selesai") => {
     if (newStatus === "Selesai") {
       setFormData((prev) => ({
         ...prev,
         status: newStatus,
         currentPage: prev.totalPages || prev.currentPage,
         movieProgressMinutes: prev.movieDurationMinutes || prev.movieProgressMinutes,
-        seriesProgressEps: prev.seriesEpisodes || prev.seriesProgressEps,
+        seriesSeasonsDetails: prev.seriesSeasonsDetails?.map((s) => ({
+          ...s,
+          status: "Selesai",
+          episodesWatched: s.episodesCount,
+        })),
       }));
     } else {
       setFormData((prev) => ({ ...prev, status: newStatus }));
@@ -244,15 +341,45 @@ export default function Dashboard() {
     if (!user) return;
 
     try {
-      let finalData = { ...formData };
+      const calculatedTotalMinutes = (movieTotalHours * 60) + movieTotalMins;
+      const calculatedProgMinutes = (movieProgHours * 60) + movieProgMins;
+
+      let finalData = { 
+        ...formData,
+        movieDurationMinutes: calculatedTotalMinutes,
+        movieProgressMinutes: calculatedProgMinutes,
+      };
+
+      // Apabila tipe tontonan adalah Series, kalkulasi agregat total episode & progressnya
+      if (finalData.mediaCategory === "series" && finalData.seriesSeasonsDetails) {
+        const details = finalData.seriesSeasonsDetails;
+        
+        const totalEps = details.reduce((acc, curr) => {
+          const target = curr.isOngoing ? Math.max(curr.episodesCount, curr.episodesWatched) : curr.episodesCount;
+          return acc + Number(target || 0);
+        }, 0);
+
+        const watchedEps = details.reduce((acc, curr) => acc + Number(curr.episodesWatched || 0), 0);
+
+        finalData.seriesSeasons = details.length;
+        finalData.seriesEpisodes = totalEps;
+        finalData.seriesProgressEps = watchedEps;
+
+        const allFinished = details.every((s) => s.status === "Selesai" || s.episodesWatched >= s.episodesCount);
+        const anyOngoing = details.some((s) => s.status === "On Going" || s.episodesWatched > 0);
+
+        if (allFinished) {
+          finalData.status = "Selesai";
+        } else if (anyOngoing) {
+          finalData.status = "On Going";
+        }
+      }
 
       if (finalData.status === "Selesai") {
         if (activeTab === "book") {
           finalData.currentPage = finalData.totalPages || finalData.currentPage;
         } else if (finalData.mediaCategory === "film") {
           finalData.movieProgressMinutes = finalData.movieDurationMinutes || finalData.movieProgressMinutes;
-        } else {
-          finalData.seriesProgressEps = finalData.seriesEpisodes || finalData.seriesProgressEps;
         }
       }
 
@@ -305,8 +432,6 @@ export default function Dashboard() {
         return Math.min(100, Math.round(((item.movieProgressMinutes || 0) / item.movieDurationMinutes) * 100));
       } else {
         if (!item.seriesEpisodes || item.seriesEpisodes === 0) return 0;
-
-        // Jika episode saat ini lebih tinggi dari total estimasi episode (misal episodenya nambah terus)
         const targetEpisodes = Math.max(item.seriesEpisodes, item.seriesProgressEps || 0);
         return Math.min(100, Math.round(((item.seriesProgressEps || 0) / targetEpisodes) * 100));
       }
@@ -321,10 +446,9 @@ export default function Dashboard() {
     );
   }
 
-  const statusOrder = { Wishlist: 1, "On Going": 2, Selesai: 3 };
   const filteredItems = items
     .filter((item) => item.type === activeTab)
-    .sort((a, b) => (statusOrder[a.status] || 99) - (statusOrder[b.status] || 99));
+    .filter((item) => (statusFilter === "Semua" ? true : item.status === statusFilter));
 
   return (
     <div className="bg-slate-900 text-slate-100 min-h-screen font-sans pb-24 md:pb-8 p-4 md:p-8 select-none">
@@ -353,7 +477,7 @@ export default function Dashboard() {
             </button>
 
             {showProfileMenu && (
-              <div className="absolute right-0 mt-2 w-64 bg-slate-800 border border-slate-700 rounded-2xl shadow-2xl p-4 z-50">
+              <div className="absolute right-0 mt-2 w-72 bg-slate-800 border border-slate-700 rounded-2xl shadow-2xl p-4 z-50">
                 <div className="flex items-center space-x-3 pb-3 border-b border-slate-700/60 mb-3">
                   {user?.photoURL ? (
                     <img src={user.photoURL} alt="Avatar" className="w-10 h-10 rounded-full border border-indigo-500" />
@@ -365,6 +489,26 @@ export default function Dashboard() {
                   <div className="overflow-hidden">
                     <p className="text-sm font-bold text-white truncate">{user?.displayName || "User"}</p>
                     <p className="text-xs text-slate-400 truncate">{user?.email}</p>
+                  </div>
+                </div>
+
+                <div className="mb-4">
+                  <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-2">
+                    Total Selesai Ditonton / Dibaca 🏆
+                  </p>
+                  <div className="grid grid-cols-3 gap-2 text-center">
+                    <div className="bg-slate-900/80 p-2 rounded-xl border border-slate-700/50">
+                      <p className="text-base font-extrabold text-indigo-400">{completedBooksCount}</p>
+                      <p className="text-[10px] text-slate-400">Buku</p>
+                    </div>
+                    <div className="bg-slate-900/80 p-2 rounded-xl border border-slate-700/50">
+                      <p className="text-base font-extrabold text-pink-400">{completedMoviesCount}</p>
+                      <p className="text-[10px] text-slate-400">Movie</p>
+                    </div>
+                    <div className="bg-slate-900/80 p-2 rounded-xl border border-slate-700/50">
+                      <p className="text-base font-extrabold text-purple-400">{completedSeriesCount}</p>
+                      <p className="text-[10px] text-slate-400">Series</p>
+                    </div>
                   </div>
                 </div>
 
@@ -381,7 +525,7 @@ export default function Dashboard() {
         </div>
 
         {/* Tab Switcher - Desktop */}
-        <div className="hidden md:flex border-b border-slate-800 mb-8 space-x-8">
+        <div className="hidden md:flex border-b border-slate-800 mb-6 space-x-8">
           <button
             onClick={() => setActiveTab("book")}
             className={`pb-3 font-semibold flex items-center space-x-2 border-b-2 transition ${
@@ -402,11 +546,29 @@ export default function Dashboard() {
           </button>
         </div>
 
-        {/* Header Section Desktop */}
-        <div className="flex justify-between items-center mb-4 md:mb-6">
+        {/* Header Section + Filters */}
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
           <h3 className="text-lg md:text-xl font-bold text-white">
             {activeTab === "book" ? "Daftar Buku Saya" : "Daftar Tontonan Saya"}
           </h3>
+
+          <div className="flex items-center space-x-2 overflow-x-auto pb-1 md:pb-0 scrollbar-none">
+            <Filter className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" />
+            {(["Semua", "Wishlist", "On Going", "Selesai"] as const).map((st) => (
+              <button
+                key={st}
+                onClick={() => setStatusFilter(st)}
+                className={`px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition border ${
+                  statusFilter === st
+                    ? "bg-slate-700 text-white border-slate-500 shadow-sm"
+                    : "bg-slate-800/60 text-slate-400 border-slate-800 hover:text-slate-200"
+                }`}
+              >
+                {st === "Wishlist" ? "✨ Wishlist" : st === "On Going" ? "📖 On Going" : st === "Selesai" ? "🏆 Selesai" : "Semua"}
+              </button>
+            ))}
+          </div>
+
           <button
             onClick={() => openModal()}
             className={`hidden md:flex px-4 py-2 rounded-lg text-sm font-medium items-center space-x-2 transition text-white ${
@@ -421,14 +583,14 @@ export default function Dashboard() {
         {/* Grid List Data */}
         {filteredItems.length === 0 ? (
           <div className="text-center py-12 bg-slate-800/20 border border-dashed border-slate-800 rounded-2xl">
-            <p className="text-slate-500 text-sm">Belum ada data. Klik tombol `+` untuk menambahkan!</p>
+            <p className="text-slate-500 text-sm">Tidak ada data untuk filter ini. Klik `+` untuk menambahkan!</p>
           </div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6">
             {filteredItems.map((item) => {
               const progress = calculateProgress(item);
               const pubInfo = PUBLISHERS.find((p) => p.name === item.subTitle);
-              const hasOngoingSeason = item.seriesIsOngoingSeason?.some((v) => v === true);
+              const lastSeasonOngoing = item.seriesSeasonsDetails?.[item.seriesSeasonsDetails.length - 1]?.isOngoing;
 
               return (
                 <div key={item.id} className="bg-slate-800/90 border border-slate-700/60 p-4 md:p-5 rounded-2xl flex gap-3 md:gap-4 group relative overflow-hidden shadow-md">
@@ -451,21 +613,27 @@ export default function Dashboard() {
                           {item.status === "Wishlist" ? "✨ Wishlist" : item.status === "On Going" ? "📖 On Going" : "🏆 Tamat"}
                         </span>
 
-                        {item.type === "movie" && (
+                        {item.type === "movie" ? (
                           <span className={`text-[10px] md:text-[11px] px-1.5 py-0.5 rounded border font-semibold flex items-center gap-1 ${pubInfo?.color || "bg-slate-700 text-slate-300 border-slate-600"}`}>
                             <span>{pubInfo?.icon || "🎬"}</span>
                             <span>{item.subTitle}</span>
                           </span>
+                        ) : (
+                          item.bookCategory && (
+                            <span className="text-[10px] bg-indigo-500/10 text-indigo-300 border border-indigo-500/20 px-1.5 py-0.5 rounded font-medium">
+                              {item.bookCategory}
+                            </span>
+                          )
                         )}
                       </div>
 
                       <h4 className="font-bold text-white text-sm md:text-base leading-snug line-clamp-1">{item.title}</h4>
-                      {item.type === "book" && <p className="text-slate-400 text-xs mb-2 line-clamp-1">{item.subTitle}</p>}
+                      {item.type === "book" && <p className="text-slate-400 text-xs mb-2 line-clamp-1">oleh {item.subTitle}</p>}
 
                       {/* Progress Bar */}
                       <div className="mt-2 mb-2">
                         <div className="flex justify-between text-[11px] text-slate-400 mb-1">
-                          <span>Progress</span>
+                          <span>Progress Total</span>
                           <span className="font-semibold text-indigo-400">{progress}%</span>
                         </div>
                         <div className="w-full bg-slate-700 h-1.5 rounded-full overflow-hidden">
@@ -481,13 +649,13 @@ export default function Dashboard() {
                           ) : item.mediaCategory === "film" ? (
                             `${formatTime(item.status === "Selesai" ? item.movieDurationMinutes : item.movieProgressMinutes)} / ${formatTime(item.movieDurationMinutes)}`
                           ) : (
-                            `${item.status === "Selesai" ? item.seriesEpisodes : item.seriesProgressEps || 0} / ${item.seriesEpisodes || 0}${hasOngoingSeason ? '+' : ''} eps (${item.seriesSeasons || 1} Season)`
+                            `${item.status === "Selesai" ? item.seriesEpisodes : item.seriesProgressEps || 0} / ${item.seriesEpisodes || 0}${lastSeasonOngoing ? '+' : ''} eps (${item.seriesSeasons || 1} Season)`
                           )}
                         </p>
                       </div>
 
-                      {/* Rating */}
-                      {item.type === "movie" && item.status === "Selesai" && item.rating && (
+                      {/* Rating Film */}
+                      {item.type === "movie" && item.mediaCategory === "film" && item.status === "Selesai" && item.rating && (
                         <div className="flex items-center space-x-0.5 mb-1">
                           {Array.from({ length: 5 }).map((_, i) => (
                             <Star 
@@ -498,7 +666,7 @@ export default function Dashboard() {
                         </div>
                       )}
 
-                      {/* Kesan Pesan */}
+                      {/* Kesan Pesan Buku */}
                       {item.type === "book" && item.kesanPesan && (
                         <p className="text-[10px] md:text-[11px] text-slate-300 italic line-clamp-2 bg-slate-900/50 p-1.5 rounded border border-slate-700/30">
                           "{item.kesanPesan}"
@@ -511,7 +679,7 @@ export default function Dashboard() {
                       <button
                         onClick={() => openMetaModal(item)}
                         className="p-1.5 text-slate-400 hover:text-amber-400 active:bg-slate-700 rounded transition"
-                        title="Edit Struktur Total"
+                        title="Edit Struktur / Total"
                       >
                         <Settings2 className="w-3.5 h-3.5" />
                       </button>
@@ -570,10 +738,10 @@ export default function Dashboard() {
         </button>
       </div>
 
-      {/* MODAL UTAMA */}
+      {/* MODAL UTAMA EDIT PROGRESS */}
       {isModalOpen && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4 z-50">
-          <div className="bg-slate-800 border-t sm:border border-slate-700 rounded-t-3xl sm:rounded-2xl max-w-md w-full p-6 relative max-h-[85vh] sm:max-h-[90vh] overflow-y-auto">
+          <div className="bg-slate-800 border-t sm:border border-slate-700 rounded-t-3xl sm:rounded-2xl max-w-lg w-full p-6 relative max-h-[85vh] sm:max-h-[90vh] overflow-y-auto">
             <button onClick={closeModal} className="absolute top-4 right-4 text-slate-400 hover:text-white">
               <X className="w-5 h-5" />
             </button>
@@ -621,6 +789,21 @@ export default function Dashboard() {
                 )}
               </div>
 
+              {activeTab === "book" && (
+                <div>
+                  <label className="block text-xs text-slate-400 mb-1">Kategori Buku</label>
+                  <select
+                    value={formData.bookCategory || "Fiksi / Novel"}
+                    onChange={(e) => setFormData({ ...formData, bookCategory: e.target.value })}
+                    className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white text-sm focus:outline-none focus:border-indigo-500"
+                  >
+                    {BOOK_CATEGORIES.map((cat) => (
+                      <option key={cat} value={cat}>{cat}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
               <div>
                 <label className="block text-xs text-slate-400 mb-1 flex items-center gap-1">
                   <ImageIcon className="w-3.5 h-3.5" /> URL Cover Image (Opsional)
@@ -630,28 +813,32 @@ export default function Dashboard() {
                   value={formData.coverUrl || ""}
                   onChange={(e) => setFormData({ ...formData, coverUrl: e.target.value })}
                   className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white text-xs focus:outline-none focus:border-indigo-500"
-                  placeholder="https://... (Link Gambar Portrait)"
+                  placeholder="https://... (Link Gambar)"
                 />
               </div>
 
-              <div>
-                <label className="block text-xs text-slate-400 mb-1">Status</label>
-                <select
-                  value={formData.status || "Wishlist"}
-                  onChange={(e) => handleStatusChange(e.target.value as any)}
-                  className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white text-sm focus:outline-none focus:border-indigo-500"
-                >
-                  <option value="Wishlist">✨ Wishlist</option>
-                  <option value="On Going">📖 On Going</option>
-                  <option value="Selesai">🏆 Selesai</option>
-                </select>
-              </div>
+              {/* Status Global (Buku / Movie Only) */}
+              {(activeTab === "book" || formData.mediaCategory === "film") && (
+                <div>
+                  <label className="block text-xs text-slate-400 mb-1">Status Progress</label>
+                  <select
+                    value={formData.status || "Wishlist"}
+                    onChange={(e) => handleGlobalStatusChange(e.target.value as any)}
+                    className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white text-sm focus:outline-none focus:border-indigo-500"
+                  >
+                    <option value="Wishlist">✨ Wishlist</option>
+                    <option value="On Going">📖 On Going</option>
+                    <option value="Selesai">🏆 Selesai</option>
+                  </select>
+                </div>
+              )}
 
+              {/* BUKU FORM */}
               {activeTab === "book" && (
                 <>
                   {formData.status !== "Selesai" && (
                     <div>
-                      <label className="block text-xs text-slate-400 mb-1">Halaman Sekarang</label>
+                      <label className="block text-xs text-slate-400 mb-1">Halaman Ditonton / Dibaca Saat Ini</label>
                       <input
                         type="number"
                         min="0"
@@ -661,17 +848,6 @@ export default function Dashboard() {
                       />
                     </div>
                   )}
-
-                  <div>
-                    <label className="block text-xs text-slate-400 mb-1">Total Halaman Buku</label>
-                    <input
-                      type="number"
-                      min="1"
-                      value={formData.totalPages ?? 0}
-                      onChange={(e) => setFormData({ ...formData, totalPages: Number(e.target.value) })}
-                      className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white text-sm focus:outline-none focus:border-indigo-500"
-                    />
-                  </div>
 
                   <div>
                     <label className="block text-xs text-slate-400 mb-1">Kesan & Pesan</label>
@@ -686,6 +862,7 @@ export default function Dashboard() {
                 </>
               )}
 
+              {/* MOVIE / SERIES FORM */}
               {activeTab === "movie" && (
                 <>
                   {!editingItem && (
@@ -702,114 +879,156 @@ export default function Dashboard() {
                     </div>
                   )}
 
-                  {formData.status !== "Selesai" && (
-                    formData.mediaCategory === "film" ? (
-                      <div>
-                        <label className="block text-xs text-slate-400 mb-1">Progress Nonton (Menit)</label>
-                        <input
-                          type="number"
-                          min="0"
-                          value={formData.movieProgressMinutes ?? 0}
-                          onChange={(e) => setFormData({ ...formData, movieProgressMinutes: Number(e.target.value) })}
-                          className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white text-sm focus:outline-none focus:border-indigo-500"
-                        />
-                      </div>
-                    ) : (
-                      <div>
-                        <label className="block text-xs text-slate-400 mb-1">Episode Ditonton (Total Seluruh Season)</label>
-                        <input
-                          type="number"
-                          min="0"
-                          value={formData.seriesProgressEps ?? 0}
-                          onChange={(e) => setFormData({ ...formData, seriesProgressEps: Number(e.target.value) })}
-                          className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white text-sm focus:outline-none focus:border-indigo-500"
-                        />
-                      </div>
-                    )
-                  )}
-
                   {formData.mediaCategory === "film" ? (
-                    <div>
-                      <label className="block text-xs text-slate-400 mb-1">Durasi Total (Menit)</label>
-                      <input
-                        type="number"
-                        min="1"
-                        value={formData.movieDurationMinutes ?? 0}
-                        onChange={(e) => setFormData({ ...formData, movieDurationMinutes: Number(e.target.value) })}
-                        className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white text-sm focus:outline-none focus:border-indigo-500"
-                      />
-                    </div>
-                  ) : (
-                    <div className="space-y-3 bg-slate-900/60 p-3 rounded-2xl border border-slate-700/50">
-                      <div>
-                        <label className="block text-xs text-slate-400 mb-1">Jumlah Season</label>
-                        <input
-                          type="number"
-                          min="1"
-                          max="20"
-                          value={formData.seriesSeasons || 1}
-                          onChange={(e) => handleSeasonCountChange(Math.max(1, Number(e.target.value)))}
-                          className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white text-sm focus:outline-none focus:border-indigo-500"
-                        />
-                      </div>
-
-                      {/* Rincian Episode */}
-                      <div className="space-y-2 pt-2 border-t border-slate-800">
-                        <label className="block text-xs font-semibold text-slate-300">Rincian Episode Tiap Season:</label>
-                        <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
-                          {Array.from({ length: formData.seriesSeasons || 1 }).map((_, idx) => (
-                            <div key={idx} className="bg-slate-800 p-2 rounded-xl border border-slate-700/60 space-y-1">
-                              <div className="flex items-center justify-between">
-                                <span className="text-xs text-slate-300 font-bold">Season {idx + 1}</span>
-                                <label className="flex items-center space-x-1.5 text-[10px] text-amber-400 cursor-pointer">
-                                  <input
-                                    type="checkbox"
-                                    checked={formData.seriesIsOngoingSeason?.[idx] || false}
-                                    onChange={() => handleToggleOngoingSeason(idx)}
-                                    className="rounded border-slate-700 bg-slate-900 text-pink-500 focus:ring-0"
-                                  />
-                                  <span>Masih Tayang / Belum Pasti</span>
-                                </label>
-                              </div>
-
+                    <>
+                      {formData.status !== "Selesai" && (
+                        <div>
+                          <label className="block text-xs text-slate-400 mb-1">Progress Nonton Saat Ini</label>
+                          <div className="grid grid-cols-2 gap-2">
+                            <div className="flex items-center space-x-2 bg-slate-900 border border-slate-700 rounded-xl px-3 py-1.5">
                               <input
                                 type="number"
-                                min="1"
-                                disabled={formData.seriesIsOngoingSeason?.[idx]}
-                                value={formData.seriesEpisodesPerSeason?.[idx] ?? 12}
-                                onChange={(e) => handleEpisodePerSeasonChange(idx, Number(e.target.value))}
-                                className="w-full bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 text-white text-xs focus:outline-none focus:border-indigo-500 disabled:opacity-50"
-                                placeholder={formData.seriesIsOngoingSeason?.[idx] ? "Episode belum pasti" : "Jumlah episode"}
+                                min="0"
+                                value={movieProgHours}
+                                onChange={(e) => setMovieProgHours(Number(e.target.value))}
+                                className="w-full bg-transparent text-white text-sm focus:outline-none"
                               />
+                              <span className="text-xs text-slate-400">Jam</span>
                             </div>
-                          ))}
+                            <div className="flex items-center space-x-2 bg-slate-900 border border-slate-700 rounded-xl px-3 py-1.5">
+                              <input
+                                type="number"
+                                min="0"
+                                max="59"
+                                value={movieProgMins}
+                                onChange={(e) => setMovieProgMins(Number(e.target.value))}
+                                className="w-full bg-transparent text-white text-sm focus:outline-none"
+                              />
+                              <span className="text-xs text-slate-400">Menit</span>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      {formData.status === "Selesai" && (
+                        <div>
+                          <label className="block text-xs text-slate-400 mb-1">Rating</label>
+                          <select
+                            value={formData.rating || 5}
+                            onChange={(e) => setFormData({ ...formData, rating: Number(e.target.value) })}
+                            className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white text-sm focus:outline-none focus:border-indigo-500"
+                          >
+                            <option value="5">⭐⭐⭐⭐⭐ (5)</option>
+                            <option value="4">⭐⭐⭐⭐ (4)</option>
+                            <option value="3">⭐⭐⭐ (3)</option>
+                            <option value="2">⭐⭐ (2)</option>
+                            <option value="1">⭐ (1)</option>
+                          </select>
+                        </div>
+                      )}
+                    </>
+                  ) : (
+                    /* PANEL EDIT PER-SEASON SERIES */
+                    <div className="space-y-3 bg-slate-900/80 p-3 rounded-2xl border border-slate-700/60">
+                      <div className="flex justify-between items-center pb-2 border-b border-slate-800">
+                        <label className="block text-xs font-bold text-pink-400">Pengaturan Per-Season</label>
+                        <div className="flex items-center space-x-2">
+                          <span className="text-xs text-slate-400">Total Season:</span>
+                          <input
+                            type="number"
+                            min="1"
+                            max="20"
+                            value={formData.seriesSeasonsDetails?.length || 1}
+                            onChange={(e) => handleSeasonCountChange(Math.max(1, Number(e.target.value)))}
+                            className="w-12 bg-slate-900 border border-slate-700 rounded-lg px-1.5 py-0.5 text-white text-xs text-center focus:outline-none focus:border-pink-500"
+                          />
                         </div>
                       </div>
 
-                      <div className="flex justify-between items-center text-xs text-pink-400 pt-2 border-t border-slate-800 font-bold">
-                        <span>Estimasi Total Episode:</span>
-                        <span>
-                          {formData.seriesEpisodes || 0}
-                          {formData.seriesIsOngoingSeason?.some(Boolean) ? "+" : ""} Episode
-                        </span>
-                      </div>
-                    </div>
-                  )}
+                      <div className="space-y-3 max-h-64 overflow-y-auto pr-1">
+                        {formData.seriesSeasonsDetails?.map((season, idx) => {
+                          const isLastSeason = idx === (formData.seriesSeasonsDetails?.length || 1) - 1;
 
-                  {formData.status === "Selesai" && (
-                    <div>
-                      <label className="block text-xs text-slate-400 mb-1">Rating</label>
-                      <select
-                        value={formData.rating || 5}
-                        onChange={(e) => setFormData({ ...formData, rating: Number(e.target.value) })}
-                        className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white text-sm focus:outline-none focus:border-indigo-500"
-                      >
-                        <option value="5">⭐⭐⭐⭐⭐ (5)</option>
-                        <option value="4">⭐⭐⭐⭐ (4)</option>
-                        <option value="3">⭐⭐⭐ (3)</option>
-                        <option value="2">⭐⭐ (2)</option>
-                        <option value="1">⭐ (1)</option>
-                      </select>
+                          return (
+                            <div key={idx} className="bg-slate-800 p-3 rounded-xl border border-slate-700/80 space-y-2">
+                              <div className="flex items-center justify-between">
+                                <span className="text-xs text-white font-bold">Season {season.seasonNumber}</span>
+
+                                {/* Checkbox Masih Tayang hanya untuk Season Terakhir */}
+                                {isLastSeason && (
+                                  <label className="flex items-center space-x-1.5 text-[10px] text-amber-400 cursor-pointer">
+                                    <input
+                                      type="checkbox"
+                                      checked={season.isOngoing}
+                                      onChange={() => toggleOngoingSeason(idx)}
+                                      className="rounded border-slate-700 bg-slate-900 text-pink-500 focus:ring-0"
+                                    />
+                                    <span>Masih Tayang</span>
+                                  </label>
+                                )}
+                              </div>
+
+                              <div className="grid grid-cols-2 gap-2">
+                                <div>
+                                  <label className="block text-[10px] text-slate-400 mb-0.5">Sudah Ditonton</label>
+                                  <input
+                                    type="number"
+                                    min="0"
+                                    value={season.episodesWatched}
+                                    onChange={(e) => updateSeasonDetail(idx, "episodesWatched", Number(e.target.value))}
+                                    className="w-full bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 text-white text-xs focus:outline-none focus:border-pink-500"
+                                    placeholder="Eps Nonton"
+                                  />
+                                </div>
+
+                                <div>
+                                  <label className="block text-[10px] text-slate-400 mb-0.5">
+                                    {season.isOngoing ? "Total Eps (Otomatis)" : "Total Episode"}
+                                  </label>
+                                  <input
+                                    type="number"
+                                    min="1"
+                                    disabled={season.isOngoing}
+                                    value={season.isOngoing ? Math.max(season.episodesCount, season.episodesWatched) : season.episodesCount}
+                                    onChange={(e) => updateSeasonDetail(idx, "episodesCount", Number(e.target.value))}
+                                    className="w-full bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 text-white text-xs focus:outline-none focus:border-pink-500 disabled:opacity-40"
+                                  />
+                                </div>
+                              </div>
+
+                              <div className="grid grid-cols-2 gap-2">
+                                <div>
+                                  <label className="block text-[10px] text-slate-400 mb-0.5">Status Season</label>
+                                  <select
+                                    value={season.status}
+                                    onChange={(e) => updateSeasonDetail(idx, "status", e.target.value)}
+                                    className="w-full bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 text-white text-xs focus:outline-none focus:border-pink-500"
+                                  >
+                                    <option value="Wishlist">✨ Wishlist</option>
+                                    <option value="On Going">📖 On Going</option>
+                                    <option value="Selesai">🏆 Selesai</option>
+                                  </select>
+                                </div>
+
+                                <div>
+                                  <label className="block text-[10px] text-slate-400 mb-0.5">Rating Season</label>
+                                  <select
+                                    value={season.rating || 5}
+                                    onChange={(e) => updateSeasonDetail(idx, "rating", Number(e.target.value))}
+                                    className="w-full bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 text-white text-xs focus:outline-none focus:border-pink-500"
+                                  >
+                                    <option value="5">⭐⭐⭐⭐⭐ (5)</option>
+                                    <option value="4">⭐⭐⭐⭐ (4)</option>
+                                    <option value="3">⭐⭐⭐ (3)</option>
+                                    <option value="2">⭐⭐ (2)</option>
+                                    <option value="1">⭐ (1)</option>
+                                  </select>
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
                     </div>
                   )}
                 </>
@@ -828,7 +1047,7 @@ export default function Dashboard() {
         </div>
       )}
 
-      {/* MODAL EDIT META (PENGATURAN STRUKTUR TOTAL) */}
+      {/* MODAL EDIT META (TOTAL HALAMAN & DURASI STRUKTUR) */}
       {isMetaModalOpen && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4 z-50">
           <div className="bg-slate-800 border-t sm:border border-slate-700 rounded-t-3xl sm:rounded-2xl max-w-md w-full p-6 relative">
@@ -854,68 +1073,34 @@ export default function Dashboard() {
                 </div>
               ) : formData.mediaCategory === "film" ? (
                 <div>
-                  <label className="block text-xs text-slate-400 mb-1">Total Durasi Film (Menit)</label>
-                  <input
-                    type="number"
-                    min="1"
-                    value={formData.movieDurationMinutes ?? 0}
-                    onChange={(e) => setFormData({ ...formData, movieDurationMinutes: Number(e.target.value) })}
-                    className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white text-sm focus:outline-none focus:border-indigo-500"
-                  />
-                </div>
-              ) : (
-                <div className="space-y-3 bg-slate-900/60 p-3 rounded-2xl border border-slate-700/50">
-                  <div>
-                    <label className="block text-xs text-slate-400 mb-1">Jumlah Season</label>
-                    <input
-                      type="number"
-                      min="1"
-                      max="20"
-                      value={formData.seriesSeasons || 1}
-                      onChange={(e) => handleSeasonCountChange(Math.max(1, Number(e.target.value)))}
-                      className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white text-sm focus:outline-none focus:border-indigo-500"
-                    />
-                  </div>
-
-                  <div className="space-y-2 pt-2 border-t border-slate-800">
-                    <label className="block text-xs font-semibold text-slate-300">Rincian Episode Tiap Season:</label>
-                    <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
-                      {Array.from({ length: formData.seriesSeasons || 1 }).map((_, idx) => (
-                        <div key={idx} className="bg-slate-800 p-2 rounded-xl border border-slate-700/60 space-y-1">
-                          <div className="flex items-center justify-between">
-                            <span className="text-xs text-slate-300 font-bold">Season {idx + 1}</span>
-                            <label className="flex items-center space-x-1.5 text-[10px] text-amber-400 cursor-pointer">
-                              <input
-                                type="checkbox"
-                                checked={formData.seriesIsOngoingSeason?.[idx] || false}
-                                onChange={() => handleToggleOngoingSeason(idx)}
-                                className="rounded border-slate-700 bg-slate-900 text-pink-500 focus:ring-0"
-                              />
-                              <span>Masih Tayang / Belum Pasti</span>
-                            </label>
-                          </div>
-
-                          <input
-                            type="number"
-                            min="1"
-                            disabled={formData.seriesIsOngoingSeason?.[idx]}
-                            value={formData.seriesEpisodesPerSeason?.[idx] ?? 12}
-                            onChange={(e) => handleEpisodePerSeasonChange(idx, Number(e.target.value))}
-                            className="w-full bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 text-white text-xs focus:outline-none focus:border-indigo-500 disabled:opacity-50"
-                            placeholder={formData.seriesIsOngoingSeason?.[idx] ? "Episode belum pasti" : "Jumlah episode"}
-                          />
-                        </div>
-                      ))}
+                  <label className="block text-xs text-slate-400 mb-1">Durasi Total Film</label>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="flex items-center space-x-2 bg-slate-900 border border-slate-700 rounded-xl px-3 py-1.5">
+                      <input
+                        type="number"
+                        min="0"
+                        value={movieTotalHours}
+                        onChange={(e) => setMovieTotalHours(Number(e.target.value))}
+                        className="w-full bg-transparent text-white text-sm focus:outline-none"
+                      />
+                      <span className="text-xs text-slate-400">Jam</span>
+                    </div>
+                    <div className="flex items-center space-x-2 bg-slate-900 border border-slate-700 rounded-xl px-3 py-1.5">
+                      <input
+                        type="number"
+                        min="0"
+                        max="59"
+                        value={movieTotalMins}
+                        onChange={(e) => setMovieTotalMins(Number(e.target.value))}
+                        className="w-full bg-transparent text-white text-sm focus:outline-none"
+                      />
+                      <span className="text-xs text-slate-400">Menit</span>
                     </div>
                   </div>
-
-                  <div className="flex justify-between items-center text-xs text-amber-400 pt-2 border-t border-slate-800 font-bold">
-                    <span>Estimasi Total Episode:</span>
-                    <span>
-                      {formData.seriesEpisodes || 0}
-                      {formData.seriesIsOngoingSeason?.some(Boolean) ? "+" : ""} Episode
-                    </span>
-                  </div>
+                </div>
+              ) : (
+                <div className="text-xs text-slate-400 bg-slate-900/60 p-3 rounded-xl border border-slate-700/50">
+                  <p>Untuk Series, struktur total episode dan season dapat diatur langsung pada panel edit utama.</p>
                 </div>
               )}
 
